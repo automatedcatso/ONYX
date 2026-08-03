@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { isAllowedAlias } from "@/lib/alias-safety";
+import { sanitizeAssistantText } from "@/lib/assistant-safety";
 import { moderateListingText, type ListingModerationResult, type ModerationIssue } from "@/lib/content-safety";
 import { sanitizeListingImage } from "@/lib/image-safety";
 import {
@@ -414,7 +415,7 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
       {currentView === "listing" && <ListingView listing={selectedListing} listings={listings} go={go} saved={selectedListing ? saved.includes(selectedListing.id) : false} onSave={() => selectedListing && void toggleSave(selectedListing.id)} onCompare={() => selectedListing && toggleCompare(selectedListing.id)} onOffer={() => selectedListing && setOfferListing(selectedListing)} onMessage={() => selectedListing && void startConversation(selectedListing)} toast={(message) => message.startsWith("Use the authenticated report") && selectedListing ? void reportListing(selectedListing) : setToast(message)}/>}
       {currentView === "sell" && <SellView wanted={route.startsWith("/wanted/new")} go={go} profile={profile} configured={Boolean(client)} onPublish={publishListing} toast={setToast}/>}
       {currentView === "messages" && <MessagesView client={client} profile={profile} route={route} go={go} toast={setToast}/>}
-      {currentView === "assistant" && <AssistantView go={go} route={route} client={client}/>}
+      {currentView === "assistant" && <AssistantView go={go} route={route} client={client} listings={listings}/>}
       {currentView === "dashboard" && <DashboardView client={client} profile={profile} listings={listings} saved={saved} route={route} go={go} refreshListings={refreshListings} toast={setToast}/>}
       {currentView === "auth" && <AuthView client={client} route={route} go={go} onAuthenticated={refreshIdentity}/>}
       {currentView === "notifications" && <NotificationsView client={client} profile={profile} go={go}/>}
@@ -817,28 +818,43 @@ function MessagesView({ client, profile, route, go, toast: notify }: { client:Su
 }
 
 
-function AssistantView({ go, route, client }: { go:(path:string)=>void; route:string; client:SupabaseClient|null }) {
+type AssistantHistoryItem = { role:"user"|"ai"; text:string; listingIds?:string[] };
+
+const initialAssistantHistory: AssistantHistoryItem[] = [{
+  role:"ai",
+  text:"Tell me what you want to buy, sell, find, or improve. I will search only active marketplace listings when your question actually requires a search.",
+}];
+
+function AssistantView({ go, route, client, listings }: { go:(path:string)=>void; route:string; client:SupabaseClient|null; listings:Listing[] }) {
   const [prompt,setPrompt] = useState(() => new URL(route, "https://local.invalid").searchParams.get("q") ?? "");
   const [loading,setLoading] = useState(false);
-  const [history,setHistory] = useState<{role:"user"|"ai";text:string}[]>([{role:"ai",text:"Tell me what you need, what you are selling, or your budget. I will search only currently active authorized inventory."}]);
+  const [history,setHistory] = useState<AssistantHistoryItem[]>(initialAssistantHistory);
   const suggestions = ["Find active study items near my block","Draft a wanted post","How should I describe an item fault?","Explain safe handover rules"];
   const respond = async (text:string) => {
-    if (!text.trim() || loading) return;
-    setHistory((current) => [...current,{role:"user",text:text.trim()}]);
+    const submitted = text.trim();
+    if (!submitted || loading) return;
+    setHistory((current) => [...current,{role:"user",text:submitted}]);
     setPrompt("");
     setLoading(true);
     try {
       const token = client ? (await client.auth.getSession()).data.session?.access_token : undefined;
       const headers: Record<string,string> = { "Content-Type":"application/json" };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch("/api/assistant", { method:"POST", headers, body:JSON.stringify({ message:text.trim(), scope:"my-block" }) });
-      const data = await response.json() as { text?:string; error?:string };
-      setHistory((current) => [...current,{role:"ai",text:data.text || data.error || "The assistant is unavailable. Core marketplace controls remain available."}]);
+      const response = await fetch("/api/assistant", { method:"POST", headers, body:JSON.stringify({ message:submitted, scope:"my-block" }) });
+      const data = await response.json() as { text?:string; error?:string; listingIds?:unknown };
+      const rawText = data.text || data.error || "The assistant is unavailable. Core marketplace controls remain available.";
+      const listingIds = Array.isArray(data.listingIds)
+        ? data.listingIds.filter((id): id is string => typeof id === "string" && listings.some((listing) => listing.id === id)).slice(0,4)
+        : [];
+      setHistory((current) => [...current,{role:"ai",text:sanitizeAssistantText(rawText),listingIds}]);
     } catch {
-      setHistory((current) => [...current,{role:"ai",text:"The assistant is offline. No inventory claim or write action was attempted."}]);
+      setHistory((current) => [...current,{role:"ai",text:"The assistant is offline. No inventory claim or marketplace action was attempted.",listingIds:[]}]);
     } finally { setLoading(false); }
   };
-  return <div className="assistant-page"><aside className="assistant-sidebar"><div><span className="brand-mark"><span/></span><h2>ONYX Assistant</h2><p>Inventory-grounded copilot</p></div><button className="new-chat" onClick={() => setHistory(history.slice(0,1))}><Icon name="plus"/>New conversation</button><nav><button className="active"><Icon name="message"/>Current chat</button><button onClick={() => go("/browse")}><Icon name="search"/>Search listings</button><button onClick={() => go("/safety")}><Icon name="shield"/>Safety policy</button></nav><div className="ai-privacy"><Icon name="lock"/><p>Prompt storage is disabled at the model request. Do not enter secrets or contact details.</p></div></aside><section className="assistant-workspace"><header><div><span className="online-dot"/><strong>Marketplace mode</strong></div><span className="mode-label">READ-ONLY · CONFIRM WRITES</span></header><div className="assistant-thread"><div className="assistant-intro"><span className="ai-orb"><Icon name="spark" size={28}/></span><h1>What are you trying to find—or hand on?</h1><p>Answers stay grounded in authorized active inventory.</p><div className="prompt-grid">{suggestions.map((item) => <button key={item} onClick={() => void respond(item)} disabled={loading}><Icon name="arrow" size={15}/>{item}</button>)}</div></div>{history.map((item,index) => <div className={`assistant-message ${item.role}`} key={`${item.role}-${index}`}>{item.role === "ai" && <span className="ai-avatar"><Icon name="spark"/></span>}<div><p>{item.text}</p>{item.role === "ai" && index > 0 && <div className="ai-actions"><button onClick={() => go("/browse")}>Open marketplace</button></div>}</div></div>)}{loading && <div className="assistant-message ai"><span className="ai-avatar"><Icon name="spark"/></span><div><p>Checking authorized active inventory…</p></div></div>}</div><div className="assistant-composer"><textarea rows={1} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void respond(prompt); } }} maxLength={1200} placeholder="Ask about inventory, pricing, listings, or safety…"/><button onClick={() => void respond(prompt)} aria-label="Send" disabled={loading}><Icon name="send"/></button><small>ONYX never claims to buy, reserve, publish, or message without a separate confirmed action.</small></div></section></div>;
+  return <div className="assistant-page"><aside className="assistant-sidebar"><div><span className="brand-mark"><span/></span><h2>ONYX Assistant</h2><p>Inventory-grounded copilot</p></div><button className="new-chat" onClick={() => setHistory(initialAssistantHistory)}><Icon name="plus"/>New conversation</button><nav><button className="active"><Icon name="message"/>Current chat</button><button onClick={() => go("/browse")}><Icon name="search"/>Search listings</button><button onClick={() => go("/safety")}><Icon name="shield"/>Safety policy</button></nav><div className="ai-privacy"><Icon name="lock"/><p>Prompt storage is disabled at the model request. Do not enter secrets or contact details.</p></div></aside><section className="assistant-workspace"><header><div><span className="online-dot"/><strong>Marketplace mode</strong></div><span className="mode-label">READ-ONLY · CONFIRM WRITES</span></header><div className="assistant-thread"><div className="assistant-intro"><span className="ai-orb"><Icon name="spark" size={28}/></span><h1>What are you trying to find—or hand on?</h1><p>Answers stay grounded in authorized active inventory.</p><div className="prompt-grid">{suggestions.map((item) => <button key={item} onClick={() => void respond(item)} disabled={loading}><Icon name="arrow" size={15}/>{item}</button>)}</div></div>{history.map((item,index) => {
+        const matches = (item.listingIds ?? []).map((id) => listings.find((listing) => listing.id === id)).filter((listing): listing is Listing => Boolean(listing));
+        return <div className={`assistant-message ${item.role}`} key={`${item.role}-${index}`}>{item.role === "ai" && <span className="ai-avatar"><Icon name="spark"/></span>}<div><p>{item.role === "ai" ? sanitizeAssistantText(item.text) : item.text}</p>{matches.length > 0 && <div className="assistant-match-list">{matches.map((listing) => <button key={listing.id} className="assistant-match-card" onClick={() => go(`/listing/${listing.slug}`)}><ListingMedia listing={listing} className="assistant-match-media"/><span><strong>{listing.title}</strong><small>{listing.postType === "wanted" ? "Budget up to" : "Price"} ₹{listing.price.toLocaleString("en-IN")} · {listing.location}</small></span><Icon name="chevron" size={16}/></button>)}</div>}{item.role === "ai" && index > 0 && matches.length === 0 && <div className="ai-actions"><button onClick={() => go("/browse")}>Open marketplace</button></div>}</div></div>;
+      })}{loading && <div className="assistant-message ai"><span className="ai-avatar"><Icon name="spark"/></span><div><p>Checking the marketplace…</p></div></div>}</div><div className="assistant-composer"><textarea rows={1} value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void respond(prompt); } }} maxLength={1200} placeholder="Ask about inventory, pricing, listings, or safety…"/><button onClick={() => void respond(prompt)} aria-label="Send" disabled={loading}><Icon name="send"/></button><small>ONYX never claims to buy, reserve, publish, or message without a separate confirmed action.</small></div></section></div>;
 }
 
 

@@ -483,3 +483,13 @@ footer { padding: 70px 0 22px; background: #030303; }.footer-grid { display: gri
   .ai-moderation-card > div:first-child { grid-template-columns: 34px 1fr; }
   .ai-moderation-card > div:first-child > b { grid-column: 2; }
 }
+
+/* Assistant result cards keep internal listing identifiers out of visible chat text. */
+.assistant-match-list { display: grid; gap: 7px; margin-top: 8px; }
+.assistant-match-card { width: min(520px,100%); min-height: 64px; display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 11px; padding: 7px 10px 7px 7px; background: #111113; border: 1px solid var(--line); border-radius: 7px; color: var(--bone); text-align: left; }
+.assistant-match-card:hover { border-color: var(--line-strong); background: var(--graphite); }
+.assistant-match-media { width: 54px; height: 50px; border-radius: 5px; overflow: hidden; }
+.assistant-match-card strong,.assistant-match-card small { display: block; }
+.assistant-match-card strong { max-width: 390px; overflow: hidden; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.assistant-match-card small { margin-top: 4px; color: var(--stone); font-size: 8px; }
+.assistant-match-card > .icon { color: var(--crimson); }

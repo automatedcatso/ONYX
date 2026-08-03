@@ -237,3 +237,19 @@ test("password visibility, account enforcement, and AI-assisted moderation are w
   assert.match(migration, /listing_images_preflight_required/);
   assert.match(migration, /public\.account_can_participate\(auth\.uid\(\)\)/);
 });
+
+test("assistant responses are plain-text, greeting-aware, and UUID-safe", async () => {
+  const route = await readFile(join(root, "app/api/assistant/route.ts"), "utf8");
+  const client = await readFile(join(root, "app/onyx-app.tsx"), "utf8");
+  const safety = await readFile(join(root, "lib/assistant-safety.ts"), "utf8");
+
+  assert.match(route, /isGreetingOnly\(parsed\.data\.message\)/);
+  assert.match(route, /without internal identifiers/);
+  assert.match(route, /Do not use Markdown, bullets, headings, asterisks/);
+  assert.doesNotMatch(route, /include an exact listing ID/);
+  assert.match(route, /sanitizeAssistantText\(extractText\(interaction\)/);
+  assert.match(client, /assistant-match-card/);
+  assert.match(client, /sanitizeAssistantText\(rawText\)/);
+  assert.match(safety, /UUID_PATTERN/);
+  assert.match(safety, /replace\(\/\[\\\\`\*_~\|\]\/g/);
+});
