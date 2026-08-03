@@ -17,3 +17,5 @@
 Historical implementation reports remain under this directory for audit context. Current operational instructions in the files above take precedence.
 
 - [v1.2.1 image-safety and user-search patch](V1_2_1_IMAGE_SAFETY_AND_USER_SEARCH.md)
+
+- [v1.2.2 public-image and marketplace-filter patch](V1_2_2_PUBLIC_IMAGES_AND_FILTERS.md)

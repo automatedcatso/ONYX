@@ -7,7 +7,7 @@ ONYX is a production-oriented, pseudonymous campus marketplace built with Next.j
 - Sale listings and wanted posts
 - Offer accept, decline, cancel, and private conversation flows
 - Public aliases with English and Romanized-Hindi abuse protection
-- Private listing images with signed access
+- Private listing images served through an active-listing-checked same-origin endpoint
 - Human moderation with owner correction threads
 - Warnings, timed suspension, restoration, and administrator-only permanent disablement
 - Deterministic text safety and narrow explicit/vulgar-image screening
@@ -58,7 +58,7 @@ Apply these files in order to a fresh Supabase project:
 6. `supabase/migrations/0006_distributed_api_rate_limits.sql`
 7. `supabase/taxonomy.sql`
 
-Existing v1.1 deployments need migration `0006` before deploying v1.2 or v1.2.1. No additional migration is required when upgrading from v1.2.0 to v1.2.1.
+Existing v1.1 deployments need migration `0006` before deploying v1.2.x. No additional migration is required when upgrading from v1.2.0 or v1.2.1 to v1.2.2.
 
 ## Environment
 
@@ -114,6 +114,7 @@ The source tests verify privacy controls, marketplace and moderation wiring, ass
 - [Legal review checklist](docs/LEGAL_REVIEW_CHECKLIST.md)
 - [v1.2 hardening patch](docs/V1_2_HARDENING_PATCH.md)
 - [v1.2.1 image-safety and account-search patch](docs/V1_2_1_IMAGE_SAFETY_AND_USER_SEARCH.md)
+- [v1.2.2 public-image and marketplace-filter patch](docs/V1_2_2_PUBLIC_IMAGES_AND_FILTERS.md)
 
 ## Repository governance
 
@@ -128,6 +129,6 @@ GitHub Actions runs the complete release gate. CodeQL, dependency review, Depend
 
 ## Security notes
 
-The browser never receives the Supabase service key, SMTP password, Gemini key, or cron secret. User mutations are enforced by RLS and checked database functions. Pending images remain private. API rate-limit buckets store only independent HMAC digests, not raw network or account identifiers. AI output is untrusted, sanitized, advisory, and limited to explicit/vulgar image screening; human moderators decide clarity and relevance.
+The browser never receives the Supabase service key, SMTP password, Gemini key, or cron secret. User mutations are enforced by RLS and checked database functions. Pending images remain private. Active images are exposed only through a same-origin server endpoint that re-checks the public listing projection before reading private Storage. API rate-limit buckets store only independent HMAC digests, not raw network or account identifiers. AI output is untrusted, sanitized, advisory, and limited to explicit/vulgar image screening; human moderators decide clarity and relevance.
 
 No hosted service can guarantee anonymity from infrastructure providers or valid legal process. Use least-privilege operator accounts, protect provider credentials, review retention settings, and obtain legal and campus-policy review before launch.

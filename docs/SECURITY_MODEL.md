@@ -17,7 +17,7 @@
 - Automated assistant and image-preflight abuse
 - Prompt injection and model-output leakage
 - Vulgar aliases and listing content
-- Explicit or irrelevant images
+- Explicit or vulgar images
 - Moderator misuse
 - Secret disclosure and unsafe preview deployments
 
@@ -28,7 +28,7 @@
 - Strict input and payload limits
 - RLS and checked `security definer` RPCs
 - Database account-enforcement triggers and functions
-- Private storage with signed URLs
+- Private Storage with same-origin image delivery that re-checks the active public listing projection
 - Distributed HMAC-keyed identity and network rate limits
 - Plain-text rendering and assistant sanitization
 - AI advisory-only workflow

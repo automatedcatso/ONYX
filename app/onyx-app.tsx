@@ -26,6 +26,8 @@ import {
   loadMarketplaceListings,
   loadUserProfile,
   marketplaceCategories,
+  nearbyLocationSlugs,
+  normalizeCategoryFilter,
   type Listing,
   type ListingStatus,
   type UserProfile,
@@ -121,7 +123,11 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [query, setQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("Whole campus");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedCondition, setSelectedCondition] = useState("all");
+  const [minimumPrice, setMinimumPrice] = useState("");
+  const [maximumPrice, setMaximumPrice] = useState("");
+  const [negotiableOnly, setNegotiableOnly] = useState(false);
   const [postType, setPostType] = useState<"all" | "sale" | "wanted">("all");
   const [saved, setSaved] = useState<string[]>([]);
   const [compare, setCompare] = useState<string[]>([]);
@@ -147,6 +153,7 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
     if (!data.user) {
       setProfile(null);
       setSaved([]);
+      setSelectedLocation((current) => current === "My block" || current === "Nearby" ? "Whole campus" : current);
       return;
     }
     const nextProfile = await loadUserProfile(client, data.user.id);
@@ -195,8 +202,25 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
       const url = new URL(route, window.location.origin);
-      if (url.searchParams.has("q")) setQuery(url.searchParams.get("q") ?? "");
-      if (url.searchParams.has("category")) setSelectedCategory(url.searchParams.get("category") ?? "All");
+      const pathView = routeName(url.pathname);
+      if (pathView !== "browse" && pathView !== "wanted") return;
+
+      setQuery(url.searchParams.get("q") ?? "");
+      setSelectedCategory(normalizeCategoryFilter(url.searchParams.get("category")));
+      setSelectedCondition(["sealed","like_new","good","fair","for_parts","any_usable"].includes(url.searchParams.get("condition") ?? "") ? String(url.searchParams.get("condition")) : "all");
+      setMinimumPrice((url.searchParams.get("min") ?? "").replace(/\D/g, ""));
+      setMaximumPrice((url.searchParams.get("max") ?? "").replace(/\D/g, ""));
+      setNegotiableOnly(url.searchParams.get("negotiable") === "1");
+
+      const locationValue = url.searchParams.get("location");
+      const exactLocation = campusLocations.find(([slug, name]) => slug === locationValue || name === locationValue);
+      setSelectedLocation(locationValue === "mine" ? "My block" : locationValue === "nearby" ? "Nearby" : exactLocation?.[1] ?? "Whole campus");
+
+      if (pathView === "wanted") setPostType("wanted");
+      else {
+        const requestedType = url.searchParams.get("type");
+        setPostType(requestedType === "sale" || requestedType === "wanted" ? requestedType : "all");
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [route]);
@@ -225,13 +249,26 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
     return listings.find((item) => item.slug === slug) ?? null;
   }, [route, listings]);
 
+  const currentView = routeName(route);
+  const effectivePostType = currentView === "wanted" ? "wanted" : postType;
   const filtered = useMemo(() => listings.filter((item) => {
-    const textMatch = `${item.title} ${item.category} ${item.location}`.toLowerCase().includes(query.toLowerCase());
-    const categoryMatch = selectedCategory === "All" || item.category === selectedCategory;
-    const typeMatch = postType === "all" || item.postType === postType;
-    const locationMatch = selectedLocation === "Whole campus" || selectedLocation === "Nearby" || (selectedLocation === "My block" ? item.location === profile?.location : item.location === selectedLocation);
-    return textMatch && categoryMatch && typeMatch && locationMatch;
-  }), [listings, profile?.location, postType, query, selectedCategory, selectedLocation]);
+    const normalizedQuery = query.trim().toLowerCase();
+    const searchable = `${item.title} ${item.description} ${item.category} ${item.location} ${item.condition} ${item.seller} ${item.postType}`.toLowerCase();
+    const textMatch = !normalizedQuery || normalizedQuery.split(/\s+/).every((term) => searchable.includes(term));
+    const categoryMatch = selectedCategory === "all" || item.categorySlug === selectedCategory;
+    const conditionMatch = selectedCondition === "all" || item.conditionSlug === selectedCondition;
+    const typeMatch = effectivePostType === "all" || item.postType === effectivePostType;
+    const minimum = Number(minimumPrice || 0);
+    const maximum = Number(maximumPrice || Number.MAX_SAFE_INTEGER);
+    const priceMatch = item.price >= minimum && item.price <= maximum;
+    const negotiableMatch = !negotiableOnly || item.negotiable;
+    const nearby = nearbyLocationSlugs(profile?.locationSlug);
+    const locationMatch = selectedLocation === "Whole campus"
+      || (selectedLocation === "Nearby" ? !profile?.locationSlug || nearby.includes(item.locationSlug)
+        : selectedLocation === "My block" ? !profile?.locationSlug || item.locationSlug === profile.locationSlug
+          : item.location === selectedLocation || item.locationSlug === selectedLocation);
+    return textMatch && categoryMatch && conditionMatch && typeMatch && priceMatch && negotiableMatch && locationMatch;
+  }), [effectivePostType, listings, maximumPrice, minimumPrice, negotiableOnly, profile?.locationSlug, query, selectedCategory, selectedCondition, selectedLocation]);
 
   const requireAccount = () => {
     if (!profile) {
@@ -405,13 +442,12 @@ export default function OnyxApp({ initialRoute }: { initialRoute: string }) {
     await refreshListings();
   };
 
-  const currentView = routeName(route);
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <Header current={currentView} go={go} query={query} setQuery={setQuery} location={selectedLocation} setLocation={setSelectedLocation} profile={profile} menuOpen={menuOpen} setMenuOpen={setMenuOpen}/>
     <main id="main-content">
       {currentView === "home" && <HomeView go={go} listings={listings} saved={saved} toggleSave={toggleSave} setOffer={setOfferListing} location={selectedLocation} setLocation={setSelectedLocation} dataState={dataState}/>}
-      {(currentView === "browse" || currentView === "wanted") && <BrowseView go={go} listings={currentView === "wanted" ? filtered.filter((item) => item.postType === "wanted") : filtered} saved={saved} toggleSave={toggleSave} toggleCompare={toggleCompare} setOffer={setOfferListing} query={query} setQuery={setQuery} location={selectedLocation} setLocation={setSelectedLocation} category={selectedCategory} setCategory={setSelectedCategory} postType={currentView === "wanted" ? "wanted" : postType} setPostType={setPostType} dataState={dataState}/>}
+      {(currentView === "browse" || currentView === "wanted") && <BrowseView go={go} listings={filtered} saved={saved} toggleSave={toggleSave} toggleCompare={toggleCompare} setOffer={setOfferListing} query={query} setQuery={setQuery} location={selectedLocation} setLocation={setSelectedLocation} category={selectedCategory} setCategory={setSelectedCategory} condition={selectedCondition} setCondition={setSelectedCondition} minimumPrice={minimumPrice} setMinimumPrice={setMinimumPrice} maximumPrice={maximumPrice} setMaximumPrice={setMaximumPrice} negotiableOnly={negotiableOnly} setNegotiableOnly={setNegotiableOnly} postType={effectivePostType} setPostType={setPostType} lockPostType={currentView === "wanted"} profileLocationSlug={profile?.locationSlug ?? null} dataState={dataState}/>}
       {currentView === "listing" && <ListingView listing={selectedListing} listings={listings} go={go} saved={selectedListing ? saved.includes(selectedListing.id) : false} onSave={() => selectedListing && void toggleSave(selectedListing.id)} onCompare={() => selectedListing && toggleCompare(selectedListing.id)} onOffer={() => selectedListing && setOfferListing(selectedListing)} onMessage={() => selectedListing && void startConversation(selectedListing)} toast={(message) => message.startsWith("Use the authenticated report") && selectedListing ? void reportListing(selectedListing) : setToast(message)}/>}
       {currentView === "sell" && <SellView wanted={route.startsWith("/wanted/new")} go={go} profile={profile} configured={Boolean(client)} onPublish={publishListing} toast={setToast}/>}
       {currentView === "messages" && <MessagesView client={client} profile={profile} route={route} go={go} toast={setToast}/>}
@@ -449,7 +485,7 @@ function Header({ current, go, query, setQuery, location, setLocation, profile, 
     </nav>
     <div className="header-tools">
       <label className="header-search"><Icon name="search" size={16}/><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Enter" && go(`/browse?q=${encodeURIComponent(query)}`)} placeholder="Search campus" aria-label="Search campus marketplace"/></label>
-      <label className="location-select"><Icon name="pin" size={16}/><select value={location} onChange={(event) => setLocation(event.target.value)} aria-label="Marketplace location"><option>My block</option><option>Nearby</option><option>Whole campus</option></select></label>
+      <label className="location-select"><Icon name="pin" size={16}/><select value={location} onChange={(event) => setLocation(event.target.value)} aria-label="Marketplace location"><option disabled={!profile?.locationSlug}>My block</option><option disabled={!profile?.locationSlug}>Nearby</option><option>Whole campus</option><optgroup label="Specific residence">{campusLocations.map(([,name]) => <option value={name} key={name}>{name}</option>)}</optgroup></select></label>
       <button className="icon-button header-bell" onClick={() => go("/notifications")} aria-label="Notifications"><Icon name="bell"/></button>
       <button className="secondary-button account-button" onClick={() => go(profile ? "/dashboard" : "/auth/sign-in")}><Icon name={profile ? "user" : "lock"} size={16}/>{profile ? profile.alias : "Sign in"}</button>
       <button className="primary-button sell-button" onClick={() => go("/sell")}><span>Sell an item</span><Icon name="arrow" size={16}/></button>
@@ -488,13 +524,13 @@ function HomeView({ go, listings, saved, toggleSave, setOffer, location, setLoca
 
     <section className="market-section page-wrap" id="marketplace">
       <SectionHeader eyebrow="Residence market" title="Nearby, useful, and accountable." copy="For-sale stock and wanted requests share one privacy-first feed." action={<button className="text-button" onClick={() => go("/browse")}>View all posts <Icon name="arrow" size={16}/></button>}/>
-      <div className="location-strip" role="list" aria-label="Residence filters">{campusLocations.slice(0, 9).map(([, name]) => <button key={name} className={location === name ? "selected" : ""} onClick={() => setLocation(name)}><span>{name}</span><b>{listings.filter((listing) => listing.location === name).length}</b></button>)}</div>
+      <div className="location-strip" role="list" aria-label="Residence filters">{campusLocations.slice(0, 9).map(([slug, name]) => <button key={name} className={location === name ? "selected" : ""} onClick={() => go(`/browse?location=${encodeURIComponent(slug)}`)}><span>{name}</span><b>{listings.filter((listing) => listing.locationSlug === slug).length}</b></button>)}</div>
       {listings.length ? <div className="listing-grid home-grid">{listings.slice(0, 6).map((listing) => <ListingCard key={listing.id} listing={listing} go={go} saved={saved.includes(listing.id)} onSave={() => void toggleSave(listing.id)} onOffer={() => setOffer(listing)}/>)}</div> : <ArtEmptyState title="No public listings yet" copy="The first verified student can submit an item for moderation or post a wanted request. Nothing here is synthetic." action={<button className="primary-button" onClick={() => go("/sell")}>Create the first listing</button>}/>}
     </section>
 
     <section className="aisle-section page-wrap">
       <SectionHeader eyebrow="Browse by category" title="Everything a room needs, sorted." copy="Category totals come only from active marketplace records."/>
-      <div className="aisle-grid">{marketplaceCategories.map(([, name, description, icon], index) => <button key={name} onClick={() => go(`/browse?category=${encodeURIComponent(name)}`)}><span className={`aisle-icon aisle-${index}`}><Icon name={icon as IconName}/></span><span><strong>{name}</strong><small>{description}</small></span><b>{listings.filter((listing) => listing.category === name).length}</b><Icon name="chevron" size={16}/></button>)}</div>
+      <div className="aisle-grid">{marketplaceCategories.map(([slug, name, description, icon], index) => <button key={name} onClick={() => go(`/browse?category=${encodeURIComponent(slug)}`)}><span className={`aisle-icon aisle-${index}`}><Icon name={icon as IconName}/></span><span><strong>{name}</strong><small>{description}</small></span><b>{listings.filter((listing) => listing.categorySlug === slug).length}</b><Icon name="chevron" size={16}/></button>)}</div>
     </section>
 
     <section className="wanted-section">
@@ -524,23 +560,43 @@ function SectionHeader({ eyebrow, title, copy, action }: { eyebrow:string; title
 }
 
 function ListingMedia({ listing, index = 0, className = "" }: { listing:Listing; index?:number; className?:string }) {
-  const url = listing.imageUrls[index] ?? listing.imageUrls[0];
-  return <span className={`listing-media ${className}`}>{url ? <img src={url} alt={`${listing.title} photo ${index + 1}`} loading="lazy" decoding="async" referrerPolicy="no-referrer"/> : <><Image src="/art/onyx-wave.webp" alt="" fill sizes="(max-width: 768px) 50vw, 25vw"/><span className="media-placeholder"><Icon name="camera"/></span></>}</span>;
+  const url = listing.imageUrls[index] ?? listing.imageUrls[0] ?? "";
+  const [failedUrl, setFailedUrl] = useState("");
+  useEffect(() => setFailedUrl(""), [url]);
+  const available = Boolean(url) && failedUrl !== url;
+  return <span className={`listing-media ${className} ${available ? "" : "image-unavailable"}`}>
+    {available
+      ? <img src={url} alt={`${listing.title} photo ${index + 1}`} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailedUrl(url)}/>
+      : <><Image src="/art/onyx-wave.webp" alt="" fill sizes="(max-width: 768px) 50vw, 25vw"/><span className="media-placeholder"><Icon name="camera"/><small>Image unavailable</small></span></>}
+  </span>;
 }
 
 function ListingCard({ listing, go, saved, onSave, onOffer, onCompare }: { listing:Listing; go:(path:string)=>void; saved:boolean; onSave:()=>void; onOffer:()=>void; onCompare?:()=>void }) {
   return <article className="listing-card"><button className="listing-image" onClick={() => go(`/listing/${listing.slug}`)} aria-label={`View ${listing.title}`}><ListingMedia listing={listing}/>{listing.live && <span className="live-tag"><i/>LIVE · {expiryLabel(listing.expiresAt)}</span>}<span className={`post-tag ${listing.postType}`}>{listing.postType === "wanted" ? "WANTED" : "FOR SALE"}</span></button><button className={`save-button ${saved ? "saved" : ""}`} onClick={onSave} aria-label={saved ? "Remove from saved" : "Save listing"}><Icon name="heart" size={17}/></button><div className="listing-body"><div className="listing-meta"><span>{listing.condition}</span><span>{listing.location}</span></div><button className="listing-title" onClick={() => go(`/listing/${listing.slug}`)}>{listing.title}</button><div className="seller-line"><span className="tiny-avatar">{listing.seller.slice(0,1).toUpperCase()}</span><span>{listing.seller}</span>{listing.ownerVerified && <Icon name="shield" size={13}/>}<span className="rating"><Icon name="star" size={12}/>{listing.reviews ? `${listing.rating.toFixed(1)} (${listing.reviews})` : "New seller"}</span></div><div className="listing-bottom"><div><strong>{listing.postType === "wanted" ? "Up to " : ""}₹{listing.price.toLocaleString("en-IN")}</strong><small>{listing.postType === "sale" ? `${Math.max(0, listing.stock - listing.reservedStock)} available` : "maximum budget"}</small></div><div className="card-actions">{onCompare && <button onClick={onCompare} aria-label="Compare"><Icon name="compare" size={16}/></button>}<button className="offer-button" onClick={onOffer}>{listing.postType === "wanted" ? "I have one" : "Offer"}</button></div></div></div></article>;
 }
 
-function BrowseView({ go, listings, saved, toggleSave, toggleCompare, setOffer, query, setQuery, location, setLocation, category, setCategory, postType, setPostType, dataState }: {
+function BrowseView({ go, listings, saved, toggleSave, toggleCompare, setOffer, query, setQuery, location, setLocation, category, setCategory, condition, setCondition, minimumPrice, setMinimumPrice, maximumPrice, setMaximumPrice, negotiableOnly, setNegotiableOnly, postType, setPostType, lockPostType, profileLocationSlug, dataState }: {
   go:(path:string)=>void; listings:Listing[]; saved:string[]; toggleSave:(id:string)=>void; toggleCompare:(id:string)=>void; setOffer:(listing:Listing)=>void;
   query:string; setQuery:(value:string)=>void; location:string; setLocation:(value:string)=>void; category:string; setCategory:(value:string)=>void;
-  postType:"all"|"sale"|"wanted"; setPostType:(value:"all"|"sale"|"wanted")=>void; dataState:DataState;
+  condition:string; setCondition:(value:string)=>void; minimumPrice:string; setMinimumPrice:(value:string)=>void; maximumPrice:string; setMaximumPrice:(value:string)=>void;
+  negotiableOnly:boolean; setNegotiableOnly:(value:boolean)=>void; postType:"all"|"sale"|"wanted"; setPostType:(value:"all"|"sale"|"wanted")=>void;
+  lockPostType:boolean; profileLocationSlug:string|null; dataState:DataState;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState("Newest");
-  const sorted = [...listings].sort((a,b) => sort === "Price: low" ? a.price - b.price : sort === "Price: high" ? b.price - a.price : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  return <div className="browse-page page-wrap"><div className="browse-heading"><div><div className="eyebrow red">RESIDENCE MARKET</div><h1>{postType === "wanted" ? "Wanted near you." : "Find it before buying new."}</h1><p>{dataState === "loading" ? "Loading verified marketplace records…" : `${listings.length} active ${listings.length === 1 ? "post" : "posts"}. No sample inventory.`}</p></div><button className="primary-button" onClick={() => go(postType === "wanted" ? "/wanted/new" : "/sell")}><Icon name="plus" size={16}/>{postType === "wanted" ? "Post wanted" : "Sell an item"}</button></div><div className="browse-search"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search items, categories, or residences"/><button onClick={() => setFiltersOpen(!filtersOpen)}><Icon name="filter"/>Filters <b>{(category !== "All" ? 1 : 0) + (postType !== "all" ? 1 : 0)}</b></button></div><div className="scope-tabs">{["My block","Nearby","Whole campus"].map((item) => <button className={location === item ? "active" : ""} key={item} onClick={() => setLocation(item)}><Icon name="pin" size={14}/>{item}</button>)}</div><div className="browse-layout"><aside className={filtersOpen ? "filters open" : "filters"}><div className="filter-title"><strong>Refine results</strong><button onClick={() => { setCategory("All"); setPostType("all"); setQuery(""); }}>Reset</button></div><fieldset><legend>Post type</legend>{[["all","Everything"],["sale","For sale"],["wanted","Wanted"]].map(([value,label]) => <label key={value}><input type="radio" name="post" checked={postType === value} onChange={() => setPostType(value as "all"|"sale"|"wanted")}/><span>{label}</span></label>)}</fieldset><fieldset><legend>Category</legend>{["All", ...marketplaceCategories.map(([,name]) => name)].map((item) => <label key={item}><input type="radio" name="category" checked={category === item} onChange={() => setCategory(item)}/><span>{item}</span></label>)}</fieldset><button className="filter-done" onClick={() => setFiltersOpen(false)}>Show {listings.length} results</button></aside><div className="results-column"><div className="results-tools"><span>{listings.length} results</span><label>Sort<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Newest</option><option>Price: low</option><option>Price: high</option></select></label></div>{sorted.length ? <div className="listing-grid">{sorted.map((listing) => <ListingCard key={listing.id} listing={listing} go={go} saved={saved.includes(listing.id)} onSave={() => void toggleSave(listing.id)} onOffer={() => setOffer(listing)} onCompare={() => toggleCompare(listing.id)}/>)}</div> : <ArtEmptyState title={dataState === "loading" ? "Loading the market" : "Nothing matches yet"} copy={dataState === "loading" ? "Only verified database records will appear." : "Broaden your area, remove a filter, or post a wanted request. ONYX will not fill the gap with fake activity."} action={dataState === "loading" ? null : <button className="primary-button" onClick={() => go("/wanted/new")}>Post wanted request</button>}/>}</div></div></div>;
+  const sorted = [...listings].sort((a,b) => sort === "Price: low" ? a.price - b.price : sort === "Price: high" ? b.price - a.price : sort === "Oldest" ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const activeFilterCount = (category !== "all" ? 1 : 0) + (!lockPostType && postType !== "all" ? 1 : 0) + (condition !== "all" ? 1 : 0) + (minimumPrice ? 1 : 0) + (maximumPrice ? 1 : 0) + (negotiableOnly ? 1 : 0) + (location !== "Whole campus" ? 1 : 0);
+  const resetFilters = () => {
+    setCategory("all");
+    if (!lockPostType) setPostType("all");
+    setCondition("all");
+    setMinimumPrice("");
+    setMaximumPrice("");
+    setNegotiableOnly(false);
+    setLocation("Whole campus");
+    setQuery("");
+  };
+  return <div className="browse-page page-wrap"><div className="browse-heading"><div><div className="eyebrow red">RESIDENCE MARKET</div><h1>{postType === "wanted" ? "Wanted near you." : "Find it before buying new."}</h1><p>{dataState === "loading" ? "Loading verified marketplace records…" : `${listings.length} active ${listings.length === 1 ? "post" : "posts"}. No sample inventory.`}</p></div><button className="primary-button" onClick={() => go(postType === "wanted" ? "/wanted/new" : "/sell")}><Icon name="plus" size={16}/>{postType === "wanted" ? "Post wanted" : "Sell an item"}</button></div><div className="browse-search"><Icon name="search"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, description, seller, category, or residence"/><button onClick={() => setFiltersOpen(!filtersOpen)} aria-expanded={filtersOpen}><Icon name="filter"/>Filters <b>{activeFilterCount}</b></button></div><div className="scope-tabs">{["My block","Nearby","Whole campus"].map((item) => <button className={location === item ? "active" : ""} key={item} disabled={(item === "My block" || item === "Nearby") && !profileLocationSlug} title={!profileLocationSlug && item !== "Whole campus" ? "Sign in and select a residence to use this scope" : undefined} onClick={() => setLocation(item)}><Icon name="pin" size={14}/>{item}</button>)}</div>{!profileLocationSlug && (location === "My block" || location === "Nearby") && <p className="filter-scope-note">Sign in and choose your residence to use this location scope. Whole-campus results are shown instead.</p>}<div className="browse-layout"><aside className={filtersOpen ? "filters open" : "filters"}><div className="filter-title"><strong>Refine results</strong><button onClick={resetFilters}>Reset all</button></div>{!lockPostType && <fieldset><legend>Post type</legend>{[["all","Everything"],["sale","For sale"],["wanted","Wanted"]].map(([value,label]) => <label key={value}><input type="radio" name="post" checked={postType === value} onChange={() => setPostType(value as "all"|"sale"|"wanted")}/><span>{label}</span></label>)}</fieldset>}<fieldset><legend>Category</legend><label><input type="radio" name="category" checked={category === "all"} onChange={() => setCategory("all")}/><span>All categories</span></label>{marketplaceCategories.map(([slug,name]) => <label key={slug}><input type="radio" name="category" checked={category === slug} onChange={() => setCategory(slug)}/><span>{name}</span></label>)}</fieldset><fieldset><legend>Condition</legend>{[["all","Any condition"],["sealed","Sealed"],["like_new","Like new"],["good","Good"],["fair","Fair"],["for_parts","For parts"],["any_usable","Any usable"]].map(([value,label]) => <label key={value}><input type="radio" name="condition" checked={condition === value} onChange={() => setCondition(value)}/><span>{label}</span></label>)}</fieldset><fieldset><legend>Price or budget</legend><div className="filter-price-grid"><label><span>Minimum ₹</span><input inputMode="numeric" value={minimumPrice} onChange={(event) => setMinimumPrice(event.target.value.replace(/\D/g,""))} placeholder="0"/></label><label><span>Maximum ₹</span><input inputMode="numeric" value={maximumPrice} onChange={(event) => setMaximumPrice(event.target.value.replace(/\D/g,""))} placeholder="Any"/></label></div></fieldset><fieldset><legend>Offer options</legend><label><input type="checkbox" checked={negotiableOnly} onChange={(event) => setNegotiableOnly(event.target.checked)}/><span>Negotiable only</span></label></fieldset><button className="filter-done" onClick={() => setFiltersOpen(false)}>Show {listings.length} results</button></aside><div className="results-column"><div className="results-tools"><span>{listings.length} results</span><label>Sort<select value={sort} onChange={(event) => setSort(event.target.value)}><option>Newest</option><option>Oldest</option><option>Price: low</option><option>Price: high</option></select></label></div>{sorted.length ? <div className="listing-grid">{sorted.map((listing) => <ListingCard key={listing.id} listing={listing} go={go} saved={saved.includes(listing.id)} onSave={() => void toggleSave(listing.id)} onOffer={() => setOffer(listing)} onCompare={() => toggleCompare(listing.id)}/>)}</div> : <ArtEmptyState title={dataState === "loading" ? "Loading the market" : "Nothing matches yet"} copy={dataState === "loading" ? "Only verified database records will appear." : "Broaden the location, clear a condition or price filter, or post a wanted request."} action={dataState === "loading" ? null : <button className="primary-button" onClick={resetFilters}>Clear filters</button>}/>}</div></div></div>;
 }
 
 function ListingView({ listing, listings, go, saved, onSave, onCompare, onOffer, onMessage, toast }: { listing:Listing|null; listings:Listing[]; go:(path:string)=>void; saved:boolean; onSave:()=>void; onCompare:()=>void; onOffer:()=>void; onMessage:()=>void; toast:(message:string)=>void }) {
@@ -1139,7 +1195,7 @@ function SettingsView({ client, profile, setProfile, go, toast }: { client:Supab
       if (message.includes("alias_change_cooldown")) return toast("Alias changes have a 30-day cooldown");
       return toast("Profile could not be updated");
     }
-    setProfile({...profile,alias:normalizedAlias,location:locationName,locationId:String(data)});
+    setProfile({...profile,alias:normalizedAlias,location:locationName,locationSlug,locationId:String(data)});
     toast("Profile updated");
   };
   const signOut = async () => { await client.auth.signOut(); setProfile(null); go("/"); };

@@ -18,7 +18,7 @@ Correct `NEXT_PUBLIC_APP_URL`, Supabase Site URL, and Redirect URLs. Redeploy af
 
 ## Images fail to render
 
-Confirm the `listing-images` bucket is private, storage policies from migrations `0002` and `0005` exist, and the user is authorized to request a signed URL.
+Open `/api/marketplace` and confirm the listing includes one or more `/api/listing-images/<image-id>` URLs. Then open one image URL directly. A `404` means the image metadata is missing or the listing is not currently public; a `503` means the service key or Supabase connection is unavailable. Confirm `SUPABASE_SERVICE_ROLE_KEY`, the private `listing-images` bucket, migration `0005`, and the `listing_images` metadata row. The browser no longer signs Storage URLs itself.
 
 ## Assistant shows no AI response
 

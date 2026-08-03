@@ -24,6 +24,7 @@ export type Listing = {
   locationSlug: string;
   price: number;
   condition: string;
+  conditionSlug: string;
   stock: number;
   reservedStock: number;
   rating: number;
@@ -41,6 +42,7 @@ export type UserProfile = {
   id: string;
   alias: string;
   location: string;
+  locationSlug: string | null;
   locationId: string | null;
   accountStatus: "active" | "warned" | "suspended" | "banned";
   moderationReason: string;
@@ -80,46 +82,31 @@ export const marketplaceCategories = [
   ["appliances-cooling", "Appliances and cooling", "Fans, coolers, extensions", "spark"],
 ] as const;
 
-type MarketplaceRow = {
-  id: string;
-  slug: string;
-  post_type: "sale" | "wanted";
-  mode: "live" | "standard";
-  title: string;
-  description: string;
-  condition: string;
-  price_inr: number | null;
-  budget_max_inr: number | null;
-  negotiable: boolean;
-  stock: number;
-  reserved_stock: number;
-  expires_at: string | null;
-  created_at: string;
-  owner_alias: string;
-  owner_verified: boolean;
-  location_slug: string;
-  location_name: string;
-  category_slug: string;
-  category_name: string;
-};
+const nearbyResidenceGroups = [
+  ["pg-potheri", "pg-trs", "estancia", "abode"],
+  ["paari", "kaari", "oori", "adhiyaman", "nelson-mandela", "n-block-premium"],
+  ["kalpana-chawla", "meenakshi", "m-block", "malligai", "thamarai", "mullai", "shenbagam", "esq-a-b"],
+] as const;
 
-type ListingImageRow = {
-  listing_id: string;
-  storage_path: string;
-  sort_order: number;
-};
-
-type ReputationRow = {
-  alias: string;
-  rating_count: number;
-  average_rating: number | string;
-};
 
 export function formatCondition(value: string) {
   return value
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+export function normalizeCategoryFilter(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "all") return "all";
+  const match = marketplaceCategories.find(([slug, name]) => slug === normalized || name.toLowerCase() === normalized);
+  return match?.[0] ?? "all";
+}
+
+export function nearbyLocationSlugs(locationSlug: string | null | undefined) {
+  if (!locationSlug) return [] as string[];
+  const group = nearbyResidenceGroups.find((items) => (items as readonly string[]).includes(locationSlug));
+  return group ? [...group] : [locationSlug];
 }
 
 export function formatRelativeTime(value: string) {
@@ -141,70 +128,17 @@ export function expiryLabel(expiresAt: string | null) {
   return hours < 24 ? `${hours}h left` : `${Math.ceil(hours / 24)}d left`;
 }
 
-export async function loadMarketplaceListings(client: SupabaseClient): Promise<Listing[]> {
-  const { data, error } = await client
-    .from("marketplace_listings")
-    .select("id,slug,post_type,mode,title,description,condition,price_inr,budget_max_inr,negotiable,stock,reserved_stock,expires_at,created_at,owner_alias,owner_verified,location_slug,location_name,category_slug,category_name")
-    .order("created_at", { ascending: false })
-    .limit(100);
-
-  if (error) throw new Error("Marketplace data could not be loaded.");
-  const rows = (data ?? []) as unknown as MarketplaceRow[];
-  if (!rows.length) return [];
-
-  const ids = rows.map((row) => row.id);
-  const [{ data: imageData }, { data: reputationData }] = await Promise.all([
-    client
-      .from("listing_images")
-      .select("listing_id,storage_path,sort_order")
-      .in("listing_id", ids)
-      .order("sort_order", { ascending: true }),
-    client.from("public_reputation").select("alias,rating_count,average_rating"),
-  ]);
-
-  const imageMap = new Map<string, string[]>();
-  const signedImages = await Promise.all(
-    ((imageData ?? []) as unknown as ListingImageRow[]).map(async (image) => {
-      const { data: signed } = await client.storage.from("listing-images").createSignedUrl(image.storage_path, 21_600);
-      return { ...image, url: signed?.signedUrl ?? "" };
-    }),
-  );
-  for (const image of signedImages) {
-    if (!image.url) continue;
-    imageMap.set(image.listing_id, [...(imageMap.get(image.listing_id) ?? []), image.url]);
-  }
-  const reputationMap = new Map(
-    ((reputationData ?? []) as unknown as ReputationRow[]).map((row) => [row.alias, row]),
-  );
-
-  return rows.map((row) => {
-    const reputation = reputationMap.get(row.owner_alias);
-    return {
-      id: row.id,
-      slug: row.slug,
-      title: row.title,
-      description: row.description,
-      postType: row.post_type,
-      live: row.mode === "live",
-      category: row.category_name,
-      categorySlug: row.category_slug,
-      location: row.location_name,
-      locationSlug: row.location_slug,
-      price: row.post_type === "wanted" ? row.budget_max_inr ?? 0 : row.price_inr ?? 0,
-      condition: formatCondition(row.condition),
-      stock: row.stock,
-      reservedStock: row.reserved_stock,
-      rating: Number(reputation?.average_rating ?? 0),
-      reviews: reputation?.rating_count ?? 0,
-      seller: row.owner_alias,
-      ownerVerified: row.owner_verified,
-      expiresAt: row.expires_at,
-      createdAt: row.created_at,
-      imageUrls: imageMap.get(row.id) ?? [],
-      negotiable: row.negotiable,
-      status: "active",
-    };
+export async function loadMarketplaceListings(_client: SupabaseClient): Promise<Listing[]> {
+  const response = await fetch("/api/marketplace", {
+    method: "GET",
+    cache: "no-store",
+    headers: { Accept: "application/json" },
   });
+  const payload = await response.json().catch(() => null) as { items?: unknown } | null;
+  if (!response.ok || !payload || !Array.isArray(payload.items)) {
+    throw new Error("Marketplace data could not be loaded.");
+  }
+  return payload.items as Listing[];
 }
 
 export async function loadUserProfile(client: SupabaseClient, userId: string): Promise<UserProfile | null> {
@@ -216,13 +150,15 @@ export async function loadUserProfile(client: SupabaseClient, userId: string): P
   if (error || !data) return null;
 
   let location = "Residence not selected";
+  let locationSlug: string | null = null;
   if (data.location_id) {
     const { data: locationRow } = await client
       .from("locations")
-      .select("name")
+      .select("name,slug")
       .eq("id", data.location_id)
       .maybeSingle();
-    if (locationRow?.name) location = locationRow.name;
+    if (locationRow?.name) location = String(locationRow.name);
+    if (locationRow?.slug) locationSlug = String(locationRow.slug);
   }
 
   let accountStatus: UserProfile["accountStatus"] = "active";
@@ -245,6 +181,7 @@ export async function loadUserProfile(client: SupabaseClient, userId: string): P
     id: String(data.id),
     alias: String(data.alias),
     location,
+    locationSlug,
     locationId: data.location_id ? String(data.location_id) : null,
     accountStatus,
     moderationReason,

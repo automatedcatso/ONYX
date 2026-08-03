@@ -288,6 +288,33 @@ test("distributed rate limits and least-privilege assistant reads are wired", as
   assert.match(maintenance, /prune_api_rate_limits/);
 });
 
+
+
+test("public listing images and marketplace filters fail safely", async () => {
+  const marketplace = await readFile(join(root, "lib/marketplace.ts"), "utf8");
+  const marketplaceRoute = await readFile(join(root, "app/api/marketplace/route.ts"), "utf8");
+  const imageRoute = await readFile(join(root, "app/api/listing-images/[imageId]/route.ts"), "utf8");
+  const client = await readFile(join(root, "app/onyx-app.tsx"), "utf8");
+
+  assert.match(marketplace, /fetch\("\/api\/marketplace"/);
+  assert.doesNotMatch(marketplace, /createSignedUrl/);
+  assert.match(marketplaceRoute, /createServiceSupabaseClient/);
+  assert.match(marketplaceRoute, /from\("marketplace_listings"\)/);
+  assert.match(marketplaceRoute, /from\("listing_images"\)/);
+  assert.match(marketplaceRoute, /\/api\/listing-images\/\$\{encodeURIComponent\(image\.id\)\}/);
+  assert.match(imageRoute, /createServiceSupabaseClient/);
+  assert.match(imageRoute, /from\("marketplace_listings"\)/);
+  assert.match(imageRoute, /from\("listing-images"\)[\s\S]*createSignedUrl/);
+  assert.match(imageRoute, /private, max-age=60/);
+  assert.match(client, /onError=\{\(\) => setFailedUrl\(url\)\}/);
+  assert.match(client, /const effectivePostType = currentView === "wanted" \? "wanted" : postType/);
+  assert.match(client, /nearbyLocationSlugs\(profile\?\.locationSlug\)/);
+  assert.match(client, /conditionSlug === selectedCondition/);
+  assert.match(client, /negotiableOnly/);
+  assert.match(client, /filter-price-grid/);
+  assert.match(client, /normalizeCategoryFilter/);
+});
+
 test("repository governance and release automation are present", async () => {
   const packageFile = await readFile(join(root, "package.json"), "utf8");
   const license = await readFile(join(root, "LICENSE"), "utf8");
@@ -295,7 +322,7 @@ test("repository governance and release automation are present", async () => {
   const security = await readFile(join(root, "SECURITY.md"), "utf8");
   const readme = await readFile(join(root, "README.md"), "utf8");
 
-  assert.match(packageFile, /"version": "1\.2\.1"/);
+  assert.match(packageFile, /"version": "1\.2\.2"/);
   assert.match(packageFile, /"license": "MIT"/);
   assert.match(packageFile, /verify:env/);
   assert.match(license, /MIT License/);

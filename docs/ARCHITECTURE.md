@@ -4,18 +4,18 @@
 
 ### Browser
 
-The Next.js client renders marketplace data, performs authenticated Supabase calls, preprocesses listing images, and supplies bearer tokens to protected server routes. It never receives the service-role key, SMTP credentials, Gemini key, or cron secret.
+The Next.js client renders a server-projected public marketplace feed, performs authenticated Supabase mutations, preprocesses listing images, and supplies bearer tokens to protected server routes. It never receives the service-role key, SMTP credentials, Gemini key, or cron secret.
 
 ### Vercel / Next.js
 
-Server routes handle controlled registration, recovery email, assistant generation, multimodal moderation preflight, liveness, and protected maintenance. Same-origin JSON checks protect mutations.
+Server routes handle controlled registration, recovery email, the sanitized public marketplace projection, active-listing-checked image delivery, assistant generation, multimodal moderation preflight, liveness, and protected maintenance. Same-origin JSON checks protect mutations.
 
 ### Supabase
 
 - Auth: confirmed accounts and sessions
 - Postgres: listings, offers, conversations, notifications, reports, moderation, enforcement, deletion jobs, and rate limits
 - RLS/RPC: authorization boundary for user actions
-- Storage: private listing images with signed reads
+- Storage: private listing images; only the server creates short-lived upstream reads after checking the listing is public
 - Realtime: participant-protected message updates and minimal marketplace change signals
 
 ### SMTP
@@ -36,7 +36,7 @@ Optional. The assistant receives the user request and only matched catalog field
 
 ## Least privilege
 
-Public assistant inventory reads use the publishable Supabase client. The service client is reserved for verified-user checks, controlled auth administration, protected maintenance, and rate-limit RPCs.
+Public assistant inventory reads use the publishable Supabase client. The service client is otherwise limited to explicit server projections and privileged operations: the public marketplace route selects only active-view fields and image identifiers, the image route re-checks that active view before reading Storage, and auth administration, maintenance, and rate-limit RPCs remain server-only.
 
 ## Data flow: listing submission
 
@@ -45,4 +45,4 @@ Public assistant inventory reads use the publishable Supabase client. The servic
 3. Optional Gemini review returns advisory signals.
 4. Browser records the preflight and uploads to private storage.
 5. Listing remains pending until a moderator approves it.
-6. Approved image reads use short-lived signed URLs.
+6. The browser requests a same-origin image URL. The server verifies the image belongs to a currently active marketplace-view row, creates a short-lived upstream Storage read, and streams the WebP response.

@@ -500,3 +500,20 @@ footer { padding: 70px 0 22px; background: #030303; }.footer-grid { display: gri
 .assistant-match-card strong { max-width: 390px; overflow: hidden; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .assistant-match-card small { margin-top: 4px; color: var(--stone); font-size: 8px; }
 .assistant-match-card > .icon { color: var(--crimson); }
+
+/* v1.2.2 public image delivery and deterministic marketplace filters. */
+.listing-media.image-unavailable { background: #111114; }
+.listing-media.image-unavailable > img { opacity: .2; filter: grayscale(1); }
+.listing-media .media-placeholder { display: grid; justify-items: center; gap: 6px; }
+.listing-media .media-placeholder small { color: #b6afa5; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.scope-tabs button:disabled { cursor: not-allowed; opacity: .42; }
+.filter-scope-note { margin: 10px 0 0; color: #9b958c; font-size: 10px; line-height: 1.5; }
+.filter-price-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.filters .filter-price-grid label { min-height: 0; display: grid; align-items: initial; gap: 6px; }
+.filters .filter-price-grid label > span { color: #8f8981; font-size: 9px; }
+.filters .filter-price-grid input { width: 100%; min-width: 0; height: 38px; padding: 0 9px; background: #111113; color: var(--bone); border: 1px solid var(--line); border-radius: 5px; outline: 0; }
+.filters .filter-price-grid input:focus { border-color: #777069; }
+
+@media (max-width: 700px) {
+  .filter-price-grid { grid-template-columns: 1fr; }
+}

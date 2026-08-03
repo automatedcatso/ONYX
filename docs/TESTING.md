@@ -32,7 +32,7 @@ Use a disposable Supabase project and separate test accounts:
 - Invalid and abusive aliases
 - Sale and wanted listing creation
 - Deterministic and AI moderation outcomes
-- Private image upload and signed access
+- Private image upload, active public projection, same-origin image delivery, and cross-account rendering
 - Cross-account listing, offer, message, and report denial
 - Offer accept, decline, cancel, and conversation creation
 - Moderator messages and owner replies
@@ -40,3 +40,4 @@ Use a disposable Supabase project and separate test accounts:
 - Account deletion and reported-thread safety hold
 - Rate-limit exhaustion and reset
 - Assistant greeting, search cards, and UUID/Markdown suppression
+- Category, condition, price, negotiable, wanted-only, My block, Nearby, exact-residence, reset, and search filters

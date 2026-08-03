@@ -2,6 +2,17 @@
 
 All notable changes are recorded here. Versions follow Semantic Versioning.
 
+## 1.2.2 — 2026-08-04
+
+### Fixed
+
+- Replaced visitor-side Supabase image signing with a same-origin server image endpoint that verifies the listing is currently public before serving its private Storage object.
+- Added a visible image fallback so failed media can no longer render as an unexplained black panel.
+- Corrected Wanted-page filtering so a stale sale-only state cannot hide wanted posts.
+- Made category URL filters use stable slugs and accept legacy category names.
+- Implemented real residence clusters for Nearby, exact My block filtering, specific-residence filtering, condition filters, price/budget ranges, negotiable-only filtering, complete reset behavior, and accurate filter counts.
+- Expanded search across title, description, seller alias, category, condition, residence, and post type.
+
 ## 1.2.1 — 2026-08-04
 
 ### Changed
