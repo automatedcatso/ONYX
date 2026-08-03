@@ -1,0 +1,12 @@
+{
+  "name": "ONYX Campus Marketplace",
+  "short_name": "ONYX",
+  "description": "Verified students. Public aliases. Local handovers. Less waste.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    { "src": "/onyx-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
