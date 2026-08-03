@@ -1,3 +1,5 @@
+import { publicApplicationOrigin } from "@/lib/runtime-config";
+
 const JSON_TYPE = "application/json";
 
 export const noStoreHeaders = {
@@ -25,9 +27,12 @@ export function isTrustedMutationRequest(request: Request) {
   const origin = originOf(request.headers.get("origin"));
   if (!origin) return false;
 
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (fetchSite && !["same-origin", "same-site", "none"].includes(fetchSite)) return false;
+
   const allowedOrigins = new Set<string>();
   const requestOrigin = originOf(request.url);
-  const configuredOrigin = publicAppUrl();
+  const configuredOrigin = publicApplicationOrigin();
   if (requestOrigin) allowedOrigins.add(requestOrigin);
   if (configuredOrigin) allowedOrigins.add(configuredOrigin);
 
@@ -50,12 +55,4 @@ export function isTrustedMutationRequest(request: Request) {
   return allowedOrigins.has(origin);
 }
 
-export function publicAppUrl() {
-  const configured = process.env.NEXT_PUBLIC_APP_URL;
-  if (!configured) return null;
-  try {
-    return new URL(configured).origin;
-  } catch {
-    return null;
-  }
-}
+export const publicAppUrl = publicApplicationOrigin;

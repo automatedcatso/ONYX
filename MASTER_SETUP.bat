@@ -29,8 +29,17 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo Running ONYX source and migration checks...
+call npm test
+if errorlevel 1 (
+  echo [ERROR] Source validation failed. Review the output above before running or deploying.
+  pause
+  exit /b 1
+)
+
 echo.
-echo ONYX setup is complete.
-echo Edit .env.local only when connecting Supabase, SMTP, or Gemini.
+echo ONYX setup and source validation are complete.
+echo Edit .env.local when connecting Supabase, SMTP, or Gemini.
+echo Run MASTER_VERIFY_DEPLOYMENT.bat before a production release.
 echo Run MASTER_RUN.bat to start the site.
 pause

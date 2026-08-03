@@ -1,9 +1,20 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { supabasePublicConfiguration, supabaseServiceConfiguration } from "@/lib/runtime-config";
+
+const commonOptions = {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { "X-Client-Info": "onyx-marketplace-server" } },
+} as const;
+
+export function createPublicSupabaseClient() {
+  const config = supabasePublicConfiguration();
+  if (!config) return null;
+  return createClient(config.url, config.publishableKey, commonOptions);
+}
 
 export function createServiceSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  const config = supabaseServiceConfiguration();
+  if (!config) return null;
+  return createClient(config.url, config.serviceKey, commonOptions);
 }

@@ -438,8 +438,15 @@ footer { padding: 70px 0 22px; background: #030303; }.footer-grid { display: gri
 .ai-suggestions span { padding: 6px 8px; background: #171719; border: 1px solid var(--line); border-radius: 4px; color: #aaa49c; font-size: 8px; }
 .account-layout { grid-template-columns: minmax(300px,380px) minmax(0,1fr); }
 .account-queue { max-height: 860px; }
-.account-search { height: 54px; display: flex; align-items: center; gap: 8px; padding: 0 13px; border-bottom: 1px solid var(--line); }
-.account-search input { width: 100%; background: transparent; color: var(--bone); border: 0; outline: 0; font-size: 10px; }
+.account-search { min-height: 54px; display: flex; align-items: center; gap: 8px; padding: 0 13px; border-bottom: 1px solid var(--line); }
+.account-search:focus-within { background: #111113; box-shadow: inset 2px 0 0 var(--crimson); }
+.account-search input { min-width: 0; width: 100%; background: transparent; color: var(--bone); border: 0; outline: 0; font-size: 10px; }
+.account-search-clear { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; color: var(--stone); background: transparent; border: 1px solid transparent; border-radius: 5px; }
+.account-search-clear:hover { color: var(--bone); border-color: var(--line-strong); background: var(--graphite); }
+.account-search-spinner { width: 14px; height: 14px; flex: 0 0 auto; border: 2px solid #343438; border-top-color: var(--crimson); border-radius: 50%; animation: account-search-spin .7s linear infinite; }
+.account-search-meta { min-height: 31px; display: flex; align-items: center; padding: 7px 13px; color: #77726b; background: #0d0d0f; border-bottom: 1px solid var(--line); font-size: 7px; letter-spacing: .03em; }
+.account-search-meta.error { color: #f0757c; }
+@keyframes account-search-spin { to { transform: rotate(360deg); } }
 .large-avatar.compact { width: 38px; height: 38px; font-size: 14px; }
 .account-status { display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding: 0 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--stone); font-size: 7px; text-transform: uppercase; letter-spacing: .05em; }
 .account-status.warned { color: #ddb75f; border-color: rgba(233,185,79,.28); background: rgba(233,185,79,.07); }

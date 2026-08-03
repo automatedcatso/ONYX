@@ -34,6 +34,7 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
   { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-XSS-Protection", value: "0" },
   { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
   { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet, noimageindex" },
 ];

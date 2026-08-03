@@ -1,4 +1,4 @@
-const CACHE = "onyx-shell-v3";
+const CACHE = "onyx-shell-v4";
 const SHELL = [
   "/art/gothic-moon-cathedral.webp",
   "/art/cathedral-courtyard.webp",

@@ -598,7 +598,7 @@ function SellView({ wanted, go, profile, configured, onPublish, toast }: { wante
   if (!profile) return <div className="simple-page page-wrap"><ArtEmptyState title="Verify before publishing" copy="A verified account is required so moderation and ownership remain accountable while your public alias stays separate." action={<button className="primary-button" onClick={() => go("/auth/sign-in")}>Sign in</button>}/></div>;
   if (profile.accountStatus === "suspended" || profile.accountStatus === "banned") return <div className="simple-page page-wrap"><ArtEmptyState title={profile.accountStatus === "banned" ? "Account disabled" : "Marketplace access suspended"} copy={profile.moderationReason || "A moderator has temporarily disabled marketplace actions for this account."} action={<button className="secondary-button" onClick={() => go("/dashboard")}>View account status</button>}/></div>;
   const locationName = campusLocations.find(([slug]) => slug === locationSlug)?.[1] ?? "Campus";
-  return <div className="sell-page"><div className="sell-editor"><div className="sell-top"><button className="brand" onClick={() => go("/")}><span className="brand-mark"><span/></span><span className="brand-word">Onyx</span></button><button className="close-sell" onClick={() => go("/dashboard")}><Icon name="close"/>Close</button></div><div className="sell-progress">{[1,2,3,4].map((number) => <div key={number} className={step >= number ? "active" : ""}><span>{step > number ? <Icon name="check" size={14}/> : number}</span><small>{["Basics","Photos","Price & stock","Preview"][number - 1]}</small></div>)}</div><div className="sell-form">{step === 1 && <><div className="eyebrow red">STEP 1 OF 4</div><h1>{wanted ? "What are you looking for?" : "What are you handing on?"}</h1><p>Your alias and coarse residence are public. Never include contact details or a room number.</p><label>{wanted ? "Wanted item" : "Listing title"}<input autoFocus maxLength={70} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Use a specific item name"/><small>{title.length}/70</small></label><div className="form-grid"><label>Category<select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)}>{marketplaceCategories.map(([slug,name]) => <option value={slug} key={slug}>{name}</option>)}</select></label><label>{wanted ? "Condition tolerance" : "Condition"}<select value={condition} onChange={(event) => setCondition(event.target.value)}><option value="sealed">Sealed</option><option value="like_new">Like new</option><option value="good">Good</option><option value="fair">Fair</option>{wanted ? <option value="any_usable">Any usable</option> : <option value="for_parts">For parts</option>}</select></label></div><label>Description<textarea value={description} maxLength={5000} onChange={(event) => setDescription(event.target.value)} placeholder={wanted ? "State must-haves, acceptable wear, and timing." : "Disclose age, faults, included accessories, and reason for selling."} rows={5}/></label></>}{step === 2 && <><div className="eyebrow red">STEP 2 OF 4</div><h1>{wanted ? "A reference is optional." : "Show the real condition."}</h1><p>Accepted files are decoded, resized, and re-encoded as WebP before upload, removing embedded location metadata.</p><input ref={inputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addPhotos}/><button className="upload-zone" type="button" onClick={() => inputRef.current?.click()}><span><Icon name="camera" size={28}/></span><strong>{wanted ? "Add an optional reference" : "Add current photos"}</strong><small>Up to 8 · 8 MB each · JPG, PNG, WebP</small></button><div className="photo-grid">{photos.map((photo,index) => <div key={photo.url}><img src={photo.url} alt={`Local preview ${index + 1}`}/><button type="button" onClick={() => { URL.revokeObjectURL(photo.url); setPhotos((current) => current.filter((_,itemIndex) => itemIndex !== index)); }} aria-label="Remove photo"><Icon name="close" size={15}/></button>{index === 0 && <span>COVER</span>}</div>)}</div></>}{step === 3 && <><div className="eyebrow red">STEP 3 OF 4</div><h1>{wanted ? "Set a realistic budget." : "Price it for a local handover."}</h1><div className="form-grid"><label>{wanted ? "Maximum budget in INR" : "Price in INR"}<div className="price-input"><span>₹</span><input inputMode="numeric" value={price} onChange={(event) => setPrice(event.target.value.replace(/\D/g,""))} placeholder="0"/></div></label>{!wanted && <label>Quantity<input type="number" min="1" max="99" value={stock} onChange={(event) => setStock(event.target.value)}/></label>}</div><label>Residence<select value={locationSlug} onChange={(event) => setLocationSlug(event.target.value)}>{campusLocations.map(([slug,name]) => <option value={slug} key={slug}>{name}</option>)}</select></label><div className="mode-cards"><button type="button" className={live ? "active" : ""} onClick={() => setLive(true)}><span><Icon name="clock"/></span><strong>Live post</strong><small>Time-limited residence-first visibility</small></button><button type="button" className={!live ? "active" : ""} onClick={() => setLive(false)}><span><Icon name="package"/></span><strong>Standard post</strong><small>Stays pending until matched, paused, or expired</small></button></div><label className="checkbox-line"><input type="checkbox" checked={negotiable} onChange={(event) => setNegotiable(event.target.checked)}/><span>{wanted ? "Open to nearby matches" : "Open to reasonable offers"}</span></label></>}{step === 4 && <><div className="eyebrow red">FINAL CHECK</div><h1>Ready for moderation.</h1><p>Submissions are not shown publicly until their database status becomes active.</p><div className="publish-preview"><div className="publish-image">{photos[0] ? <img src={photos[0].url} alt="Listing cover preview"/> : <Image src="/art/onyx-wave.webp" alt="" fill sizes="220px"/>}<span className={`post-tag ${wanted ? "wanted" : "sale"}`}>{wanted ? "WANTED" : "FOR SALE"}</span></div><div><span>{condition.replaceAll("_"," ")} · {locationName}</span><h2>{title}</h2><p>{description}</p><strong>{wanted ? "Up to " : ""}₹{Number(price).toLocaleString("en-IN")}</strong><small>{wanted ? "Maximum budget" : `${stock} in stock`} · {live ? "Live after approval" : "Standard after approval"}</small></div></div><div className="publish-checks"><span><Icon name="check"/>EXIF removed before upload</span><span><Icon name="spark"/>Text and image pre-check</span><span><Icon name="clock"/>Human moderation required</span></div><div className="ai-precheck-note"><Icon name="shield"/><div><strong>Balanced automated screening</strong><p>Obvious vulgar text, explicit imagery, and unusable photos are stopped. Uncertain findings are sent to a human moderator instead of being automatically rejected.</p></div></div></>}{error && <p className="form-error" role="alert">{error}</p>}<div className="sell-nav"><button className="secondary-button" disabled={step === 1 || publishing} onClick={() => setStep((current) => Math.max(1,current - 1))}>Back</button>{step < 4 ? <button className="primary-button" onClick={next}>Continue <Icon name="arrow" size={16}/></button> : <button className="primary-button" onClick={() => void publish()} disabled={publishing}>{publishing ? "Submitting safely…" : `Submit ${wanted ? "request" : "listing"}`} <Icon name="arrow" size={16}/></button>}</div></div></div><aside className="sell-art"><Image src="/art/alias-manifesto.webp" alt="Black and white statue artwork with painted graphic marks" fill sizes="42vw"/><div className="sell-art-inner"><div className="eyebrow"><Icon name="shield" size={14}/>SELLER PROMISE</div><blockquote>Show the flaws.<br/>Price it fairly.<br/><em>Hand it on.</em></blockquote></div></aside></div>;
+  return <div className="sell-page"><div className="sell-editor"><div className="sell-top"><button className="brand" onClick={() => go("/")}><span className="brand-mark"><span/></span><span className="brand-word">Onyx</span></button><button className="close-sell" onClick={() => go("/dashboard")}><Icon name="close"/>Close</button></div><div className="sell-progress">{[1,2,3,4].map((number) => <div key={number} className={step >= number ? "active" : ""}><span>{step > number ? <Icon name="check" size={14}/> : number}</span><small>{["Basics","Photos","Price & stock","Preview"][number - 1]}</small></div>)}</div><div className="sell-form">{step === 1 && <><div className="eyebrow red">STEP 1 OF 4</div><h1>{wanted ? "What are you looking for?" : "What are you handing on?"}</h1><p>Your alias and coarse residence are public. Never include contact details or a room number.</p><label>{wanted ? "Wanted item" : "Listing title"}<input autoFocus maxLength={70} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Use a specific item name"/><small>{title.length}/70</small></label><div className="form-grid"><label>Category<select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)}>{marketplaceCategories.map(([slug,name]) => <option value={slug} key={slug}>{name}</option>)}</select></label><label>{wanted ? "Condition tolerance" : "Condition"}<select value={condition} onChange={(event) => setCondition(event.target.value)}><option value="sealed">Sealed</option><option value="like_new">Like new</option><option value="good">Good</option><option value="fair">Fair</option>{wanted ? <option value="any_usable">Any usable</option> : <option value="for_parts">For parts</option>}</select></label></div><label>Description<textarea value={description} maxLength={5000} onChange={(event) => setDescription(event.target.value)} placeholder={wanted ? "State must-haves, acceptable wear, and timing." : "Disclose age, faults, included accessories, and reason for selling."} rows={5}/></label></>}{step === 2 && <><div className="eyebrow red">STEP 2 OF 4</div><h1>{wanted ? "A reference is optional." : "Show the real condition."}</h1><p>Accepted files are decoded, resized, and re-encoded as WebP before upload, removing embedded location metadata.</p><input ref={inputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addPhotos}/><button className="upload-zone" type="button" onClick={() => inputRef.current?.click()}><span><Icon name="camera" size={28}/></span><strong>{wanted ? "Add an optional reference" : "Add current photos"}</strong><small>Up to 8 · 8 MB each · JPG, PNG, WebP</small></button><div className="photo-grid">{photos.map((photo,index) => <div key={photo.url}><img src={photo.url} alt={`Local preview ${index + 1}`}/><button type="button" onClick={() => { URL.revokeObjectURL(photo.url); setPhotos((current) => current.filter((_,itemIndex) => itemIndex !== index)); }} aria-label="Remove photo"><Icon name="close" size={15}/></button>{index === 0 && <span>COVER</span>}</div>)}</div></>}{step === 3 && <><div className="eyebrow red">STEP 3 OF 4</div><h1>{wanted ? "Set a realistic budget." : "Price it for a local handover."}</h1><div className="form-grid"><label>{wanted ? "Maximum budget in INR" : "Price in INR"}<div className="price-input"><span>₹</span><input inputMode="numeric" value={price} onChange={(event) => setPrice(event.target.value.replace(/\D/g,""))} placeholder="0"/></div></label>{!wanted && <label>Quantity<input type="number" min="1" max="99" value={stock} onChange={(event) => setStock(event.target.value)}/></label>}</div><label>Residence<select value={locationSlug} onChange={(event) => setLocationSlug(event.target.value)}>{campusLocations.map(([slug,name]) => <option value={slug} key={slug}>{name}</option>)}</select></label><div className="mode-cards"><button type="button" className={live ? "active" : ""} onClick={() => setLive(true)}><span><Icon name="clock"/></span><strong>Live post</strong><small>Time-limited residence-first visibility</small></button><button type="button" className={!live ? "active" : ""} onClick={() => setLive(false)}><span><Icon name="package"/></span><strong>Standard post</strong><small>Stays pending until matched, paused, or expired</small></button></div><label className="checkbox-line"><input type="checkbox" checked={negotiable} onChange={(event) => setNegotiable(event.target.checked)}/><span>{wanted ? "Open to nearby matches" : "Open to reasonable offers"}</span></label></>}{step === 4 && <><div className="eyebrow red">FINAL CHECK</div><h1>Ready for moderation.</h1><p>Submissions are not shown publicly until their database status becomes active.</p><div className="publish-preview"><div className="publish-image">{photos[0] ? <img src={photos[0].url} alt="Listing cover preview"/> : <Image src="/art/onyx-wave.webp" alt="" fill sizes="220px"/>}<span className={`post-tag ${wanted ? "wanted" : "sale"}`}>{wanted ? "WANTED" : "FOR SALE"}</span></div><div><span>{condition.replaceAll("_"," ")} · {locationName}</span><h2>{title}</h2><p>{description}</p><strong>{wanted ? "Up to " : ""}₹{Number(price).toLocaleString("en-IN")}</strong><small>{wanted ? "Maximum budget" : `${stock} in stock`} · {live ? "Live after approval" : "Standard after approval"}</small></div></div><div className="publish-checks"><span><Icon name="check"/>EXIF removed before upload</span><span><Icon name="spark"/>Vulgarity and explicit-image check</span><span><Icon name="clock"/>Human moderation required</span></div><div className="ai-precheck-note"><Icon name="shield"/><div><strong>Narrow automated safety screening</strong><p>AI checks only for high-confidence pornographic imagery and clearly readable vulgar or abusive text. It does not judge whether a photo matches the title or whether the photo is attractive, centered, bright, or professionally composed. Human moderators review every listing.</p></div></div></>}{error && <p className="form-error" role="alert">{error}</p>}<div className="sell-nav"><button className="secondary-button" disabled={step === 1 || publishing} onClick={() => setStep((current) => Math.max(1,current - 1))}>Back</button>{step < 4 ? <button className="primary-button" onClick={next}>Continue <Icon name="arrow" size={16}/></button> : <button className="primary-button" onClick={() => void publish()} disabled={publishing}>{publishing ? "Submitting safely…" : `Submit ${wanted ? "request" : "listing"}`} <Icon name="arrow" size={16}/></button>}</div></div></div><aside className="sell-art"><Image src="/art/alias-manifesto.webp" alt="Black and white statue artwork with painted graphic marks" fill sizes="42vw"/><div className="sell-art-inner"><div className="eyebrow"><Icon name="shield" size={14}/>SELLER PROMISE</div><blockquote>Show the flaws.<br/>Price it fairly.<br/><em>Hand it on.</em></blockquote></div></aside></div>;
 }
 
 
@@ -1229,6 +1229,9 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
   const [accountHistory,setAccountHistory] = useState<AccountHistoryRow[]>([]);
   const [accountReason,setAccountReason] = useState("");
   const [userSearch,setUserSearch] = useState("");
+  const [userSearchBusy,setUserSearchBusy] = useState(false);
+  const [userSearchError,setUserSearchError] = useState("");
+  const userSearchSequence = useRef(0);
   const [working,setWorking] = useState(false);
 
   const load = useCallback(async () => {
@@ -1239,10 +1242,9 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
     setAuthorized(true);
     setStaffRole(roleNames.includes("admin") ? "admin" : "moderator");
 
-    const [{data:listingRows},{data:reportRows},{data:userRows}] = await Promise.all([
+    const [{data:listingRows},{data:reportRows}] = await Promise.all([
       client.from("listings").select("id,owner_id,title,description,post_type,mode,status,condition,price_inr,budget_max_inr,stock,created_at,category_id,location_id").eq("status","pending_moderation").order("created_at",{ascending:true}),
       client.from("reports").select("id,reporter_id,listing_id,conversation_id,reason,details,status,created_at").in("status",["open","reviewing"]).order("created_at",{ascending:true}),
-      client.rpc("get_moderation_users",{p_search:""}),
     ]);
     const bases = (listingRows ?? []) as AdminListingBase[];
     const listingIds = bases.map((item) => item.id);
@@ -1306,9 +1308,6 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
     setReports(nextReports);
     setSelectedReportId((current) => nextReports.some((report) => report.id === current) ? current : nextReports[0]?.id ?? "");
 
-    const nextUsers = (userRows ?? []) as AdminUser[];
-    setUsers(nextUsers);
-    setSelectedUserId((current) => nextUsers.some((user) => user.user_id === current) ? current : nextUsers[0]?.user_id ?? "");
   }, [client,profile]);
 
   useEffect(() => {
@@ -1319,7 +1318,34 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? null;
   const selectedUser = users.find((user) => user.user_id === selectedUserId) ?? null;
-  const filteredUsers = users.filter((user) => user.alias.toLowerCase().includes(userSearch.trim().toLowerCase()));
+
+  const searchModerationUsers = useCallback(async (query:string) => {
+    if (!client || authorized !== true) return;
+    const sequence = ++userSearchSequence.current;
+    setUserSearchBusy(true);
+    setUserSearchError("");
+    const {data,error} = await client.rpc("get_moderation_users",{p_search:query.trim()});
+    if (sequence !== userSearchSequence.current) return;
+    setUserSearchBusy(false);
+    if (error) {
+      setUserSearchError("User search failed. Refresh the dashboard and try again.");
+      return;
+    }
+    const nextUsers = (data ?? []) as AdminUser[];
+    setUsers(nextUsers);
+    setSelectedUserId((current) => nextUsers.some((user) => user.user_id === current) ? current : nextUsers[0]?.user_id ?? "");
+  }, [authorized,client]);
+
+  useEffect(() => {
+    if (authorized !== true) return;
+    const timer = window.setTimeout(() => void searchModerationUsers(userSearch),280);
+    return () => window.clearTimeout(timer);
+  }, [authorized,searchModerationUsers,userSearch]);
+
+  const refreshDashboard = useCallback(async () => {
+    await load();
+    await searchModerationUsers(userSearch);
+  }, [load,searchModerationUsers,userSearch]);
 
   const loadModerationThread = useCallback(async () => {
     if (!client || !selected) { setThreadMessages([]); return; }
@@ -1410,6 +1436,7 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
     }
     setAccountReason("");
     await load();
+    await searchModerationUsers(userSearch);
     await loadAccountHistory();
     toast(action === "warning" ? "Warning issued" : action === "restore" ? "Account access restored" : action === "ban" ? "Account permanently disabled" : "Account temporarily suspended");
   };
@@ -1423,7 +1450,7 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
   return <div className="admin-page page-wrap">
     <div className="admin-command-head">
       <div><div className="eyebrow red">ROLE-PROTECTED OPERATIONS</div><h1>Moderation command center</h1><p>Review listings and reports, contact owners, issue warnings, and disable abusive accounts with a complete audit history.</p></div>
-      <div className="admin-head-actions"><span className="admin-badge"><Icon name="shield"/>{staffRole === "admin" ? "Administrator" : "Moderator"}</span><button className="secondary-button" onClick={() => void load()}><Icon name="refresh"/>Refresh</button></div>
+      <div className="admin-head-actions"><span className="admin-badge"><Icon name="shield"/>{staffRole === "admin" ? "Administrator" : "Moderator"}</span><button className="secondary-button" onClick={() => void refreshDashboard()}><Icon name="refresh"/>Refresh</button></div>
     </div>
     <div className="admin-metrics">
       <article><small>Pending listings</small><strong>{items.length}</strong><span>Human approval required</span></article>
@@ -1449,11 +1476,11 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
         <div className="moderation-facts"><span><small>Category</small><strong>{selected.categoryName}</strong></span><span><small>Residence</small><strong>{selected.locationName}</strong></span><span><small>Condition</small><strong>{selected.condition.replaceAll("_"," ")}</strong></span><span><small>{selected.post_type === "wanted" ? "Budget" : "Price"}</small><strong>₹{Number(selected.post_type === "wanted" ? selected.budget_max_inr ?? 0 : selected.price_inr ?? 0).toLocaleString("en-IN")}</strong></span></div>
         <article className="moderation-description"><small>FULL DESCRIPTION</small><p>{selected.description}</p></article>
         <article className={`ai-moderation-card ${selected.aiDecision ?? "missing"}`}>
-          <div><span className="ai-orb small"><Icon name="spark"/></span><div><small>AUTOMATED PRE-CHECK · ADVISORY</small><h3>{selected.aiDecision ? selected.aiDecision.replaceAll("_"," ") : "No signal recorded"}</h3></div><b>{selected.aiProvider ?? "human review"}</b></div>
+          <div><span className="ai-orb small"><Icon name="spark"/></span><div><small>NARROW IMAGE SAFETY CHECK · ADVISORY</small><h3>{selected.aiDecision ? selected.aiDecision.replaceAll("_"," ") : "No signal recorded"}</h3></div><b>{selected.aiProvider ?? "human review"}</b></div>
           <p>{selected.aiSummary || "The automated check was unavailable or the submission bypassed the normal interface. Review all text and images manually."}</p>
           {selected.aiIssues.length > 0 && <ul>{selected.aiIssues.map((issue,index) => <li key={`${issue.code}-${index}`} className={issue.severity}><strong>{issue.severity}</strong>{issue.message}</li>)}</ul>}
           {selected.aiSuggestions.length > 0 && <div className="ai-suggestions">{selected.aiSuggestions.map((suggestion) => <span key={suggestion}>{suggestion}</span>)}</div>}
-          <small>AI never approves or removes a listing. The moderator remains responsible for the final decision.</small>
+          <small>AI only screens for explicit imagery and clearly vulgar text. It does not judge title-image relevance or photo quality, and it never approves or removes a listing.</small>
         </article>
         <label className="moderation-note">Decision note<textarea rows={3} maxLength={500} value={moderationNote} onChange={(event) => setModerationNote(event.target.value)} placeholder="Record the approval basis or exact removal reason."/></label>
         <div className="moderation-actions"><button className="primary-button" disabled={working} onClick={() => void moderate("approve")}><Icon name="check"/>Approve</button><button className="secondary-button danger" disabled={working} onClick={() => void moderate("remove")}><Icon name="trash"/>Remove</button></div>
@@ -1482,13 +1509,27 @@ function AdminView({ client, profile, go, toast }: { client:SupabaseClient|null;
 
     {tab === "users" && <div className="moderation-layout account-layout">
       <aside className="moderation-queue account-queue">
-        <div className="account-search"><Icon name="search"/><input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Search public alias"/></div>
-        {filteredUsers.map((user) => <button className={selectedUserId === user.user_id ? "active" : ""} key={user.user_id} onClick={() => { setSelectedUserId(user.user_id); setAccountReason(""); }}>
+        <div className="account-search">
+          <Icon name="search"/>
+          <input
+            aria-label="Search users by public alias"
+            autoComplete="off"
+            value={userSearch}
+            onChange={(event) => setUserSearch(event.target.value)}
+            placeholder="Search users by public alias"
+          />
+          {userSearchBusy && <span className="account-search-spinner" aria-label="Searching users"/>}
+          {userSearch && <button type="button" className="account-search-clear" onClick={() => setUserSearch("")} aria-label="Clear user search"><Icon name="close" size={14}/></button>}
+        </div>
+        <div className={`account-search-meta ${userSearchError ? "error" : ""}`}>
+          {userSearchError || (userSearchBusy ? "Searching moderation records…" : `${users.length} ${users.length === 1 ? "account" : "accounts"} loaded${userSearch.trim() ? " for this alias search" : ""}`)}
+        </div>
+        {users.map((user) => <button className={selectedUserId === user.user_id ? "active" : ""} key={user.user_id} onClick={() => { setSelectedUserId(user.user_id); setAccountReason(""); }}>
           <span className="large-avatar compact">{user.alias.slice(0,1).toUpperCase()}</span>
           <span><strong>{user.alias}{user.is_staff ? " · Staff" : ""}</strong><small>{user.active_listing_count} listings · {user.warning_count} warnings</small></span>
           <b className={`account-status ${user.status}`}>{user.status}</b>
         </button>)}
-        {filteredUsers.length === 0 && <EmptyState icon="user" title="No account found" copy="Try a different public alias." action={null}/>} 
+        {users.length === 0 && !userSearchBusy && <EmptyState icon="user" title="No account found" copy={userSearch.trim() ? "No public alias matches this search." : "No moderation-visible accounts are available."} action={null}/>} 
       </aside>
       <section className="moderation-detail account-detail">{selectedUser ? <>
         <div className="account-profile-head"><span className="large-avatar">{selectedUser.alias.slice(0,1).toUpperCase()}</span><div><div className="eyebrow red">ACCOUNT ENFORCEMENT</div><h2>{selectedUser.alias}</h2><p>Joined {new Date(selectedUser.created_at).toLocaleDateString()} · {selectedUser.verified ? "Verified" : "Unverified"}{selectedUser.is_staff ? " · Staff account" : ""}</p></div><b className={`account-status large ${selectedUser.status}`}>{selectedUser.status}</b></div>

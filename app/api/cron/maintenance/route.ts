@@ -2,12 +2,13 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { createServiceSupabaseClient } from "@/lib/supabase-server";
 import { noStoreHeaders } from "@/lib/request-security";
+import { cronSecret } from "@/lib/runtime-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 function authorized(request: Request) {
-  const expected = process.env.CRON_SECRET;
+  const expected = cronSecret();
   const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!expected || !supplied) return false;
   const left = Buffer.from(expected);
@@ -26,6 +27,10 @@ export async function GET(request: Request) {
 
   const { error: expiryError } = await service.rpc("run_expiration_maintenance");
   if (expiryError) {
+    return Response.json({ error: "Maintenance failed safely." }, { status: 503, headers: noStoreHeaders });
+  }
+  const { error: rateLimitPruneError } = await service.rpc("prune_api_rate_limits");
+  if (rateLimitPruneError) {
     return Response.json({ error: "Maintenance failed safely." }, { status: 503, headers: noStoreHeaders });
   }
 

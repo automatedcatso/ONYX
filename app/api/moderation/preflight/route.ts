@@ -5,6 +5,7 @@ import {
   type ListingModerationResult,
   type ModerationIssue,
 } from "@/lib/content-safety";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { isTrustedMutationRequest, noStoreHeaders } from "@/lib/request-security";
 import { createServiceSupabaseClient } from "@/lib/supabase-server";
 
@@ -15,8 +16,6 @@ const imageSchema = z.object({
   data: z.string().min(20).max(900_000),
   width: z.number().int().min(240).max(12_000),
   height: z.number().int().min(240).max(12_000),
-  brightness: z.number().min(0).max(255),
-  sharpness: z.number().min(0).max(1_000),
 });
 
 const requestSchema = z.object({
@@ -31,57 +30,34 @@ const aiResultSchema = z.object({
   explicitConfidence: z.number().min(0).max(1),
   abusiveTextVisible: z.boolean(),
   abusiveTextConfidence: z.number().min(0).max(1),
-  itemVisible: z.boolean(),
-  clarity: z.enum(["clear", "usable", "poor", "uncertain"]),
-  relevance: z.enum(["relevant", "possibly_relevant", "irrelevant", "uncertain"]),
-  summary: z.string().max(500),
-  suggestions: z.array(z.string().max(220)).max(6),
 });
 
 type GeminiResponse = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
 };
 
-function qualityReview(images: z.infer<typeof imageSchema>[], postType: "sale" | "wanted") {
+function imageRequirementReview(images: z.infer<typeof imageSchema>[], postType: "sale" | "wanted") {
   const issues: ModerationIssue[] = [];
-  const suggestions: string[] = [];
   if (postType === "sale" && images.length === 0) {
-    issues.push({ code: "missing_item_photo", field: "image", severity: "block", message: "Add at least one current photo of the actual item." });
-  }
-  if (!images.length) return { issues, suggestions };
-
-  const unusable = images.map((image, index) => ({
-    index,
-    tooDark: image.brightness < 17,
-    tooBright: image.brightness > 246,
-    blurry: image.sharpness < 2.4,
-  }));
-  const unusableCount = unusable.filter((item) => item.tooDark || item.tooBright || item.blurry).length;
-  if (unusableCount === images.length) {
     issues.push({
-      code: "all_images_unclear",
+      code: "missing_item_photo",
       field: "image",
       severity: "block",
-      message: "The photos are too dark, washed out, or blurry to verify the item. Retake at least one clear photo in normal light.",
+      message: "Add at least one current photo of the actual item.",
     });
-  } else {
-    for (const item of unusable) {
-      if (item.tooDark || item.tooBright || item.blurry) {
-        suggestions.push(`Photo ${item.index + 1} may be hard to verify; keep it only if another photo clearly shows the item.`);
-      }
-    }
   }
-  if (images.every((image) => Math.min(image.width, image.height) < 480)) {
-    suggestions.push("A higher-resolution cover photo will help buyers inspect the condition.");
-  }
-  return { issues, suggestions };
+  return { issues, suggestions: [] as string[] };
 }
 
 function parseGeminiResult(payload: GeminiResponse) {
   const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
   if (!text) return null;
-  const parsed = aiResultSchema.safeParse(JSON.parse(text));
-  return parsed.success ? parsed.data : null;
+  try {
+    const parsed = aiResultSchema.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 async function runGeminiReview(input: z.infer<typeof requestSchema>) {
@@ -89,13 +65,14 @@ async function runGeminiReview(input: z.infer<typeof requestSchema>) {
   if (!apiKey || !input.images.length) return null;
   const model = process.env.GEMINI_MODERATION_MODEL || process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
   const prompt = [
-    "Review this campus marketplace listing as a cautious assistant to a human moderator.",
-    `Post type: ${input.postType}`,
-    `Title: ${input.title}`,
-    `Description: ${input.description}`,
-    "Detect only clear safety problems: pornographic or explicit sexual imagery, clearly visible vulgar/abusive text, an image unrelated to the described item, or an image too unclear to verify.",
-    "Do not flag ordinary people in the background, normal clothing, product packaging, art, skin exposure that is not sexual, medical items, or uncertain content as explicit.",
-    "Use low confidence for ambiguity. A human moderator will review all submissions before publication.",
+    "Inspect only the supplied marketplace images for a narrow safety screen.",
+    "Do not decide whether an image matches a listing title, description, category, price, or condition.",
+    "Do not assess image quality, lighting, sharpness, composition, item visibility, relevance, or attractiveness.",
+    "Set explicitSexualContent=true only for clearly pornographic imagery, visible genitals presented sexually, or explicit sexual activity.",
+    "Set abusiveTextVisible=true only when clearly readable vulgar, abusive, hateful, or sexually explicit words are visible inside the image.",
+    "Normal clothing, swimwear, ordinary skin exposure, people in the background, mannequins, medical products, anatomy material, artwork, product packaging, and ambiguous content are not violations by themselves.",
+    "Use low confidence whenever uncertain. Human moderators review every submitted listing before publication.",
+    "Return only the requested JSON fields.",
   ].join("\n");
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
@@ -111,21 +88,16 @@ async function runGeminiReview(input: z.infer<typeof requestSchema>) {
       }],
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 700,
+        maxOutputTokens: 220,
         responseMimeType: "application/json",
         responseSchema: {
           type: "OBJECT",
-          required: ["explicitSexualContent", "explicitConfidence", "abusiveTextVisible", "abusiveTextConfidence", "itemVisible", "clarity", "relevance", "summary", "suggestions"],
+          required: ["explicitSexualContent", "explicitConfidence", "abusiveTextVisible", "abusiveTextConfidence"],
           properties: {
             explicitSexualContent: { type: "BOOLEAN" },
             explicitConfidence: { type: "NUMBER", minimum: 0, maximum: 1 },
             abusiveTextVisible: { type: "BOOLEAN" },
             abusiveTextConfidence: { type: "NUMBER", minimum: 0, maximum: 1 },
-            itemVisible: { type: "BOOLEAN" },
-            clarity: { type: "STRING", enum: ["clear", "usable", "poor", "uncertain"] },
-            relevance: { type: "STRING", enum: ["relevant", "possibly_relevant", "irrelevant", "uncertain"] },
-            summary: { type: "STRING" },
-            suggestions: { type: "ARRAY", items: { type: "STRING" } },
           },
         },
       },
@@ -139,38 +111,58 @@ async function runGeminiReview(input: z.infer<typeof requestSchema>) {
 function aiToModeration(ai: z.infer<typeof aiResultSchema>): Omit<ListingModerationResult, "provider"> {
   const issues: ModerationIssue[] = [];
   let decision: ListingModerationResult["decision"] = "allow";
-  if (ai.explicitSexualContent && ai.explicitConfidence >= 0.86) {
+
+  // High thresholds are deliberate. The image model is a narrow pornography/
+  // vulgar-text screen, not a relevance or quality judge.
+  if (ai.explicitSexualContent && ai.explicitConfidence >= 0.94) {
     decision = "changes_required";
-    issues.push({ code: "explicit_image", field: "image", severity: "block", message: "Remove the sexually explicit image and upload only clear photos of the item." });
-  } else if (ai.explicitSexualContent || ai.explicitConfidence >= 0.48) {
+    issues.push({
+      code: "explicit_image",
+      field: "image",
+      severity: "block",
+      message: "Remove the clearly pornographic or sexually explicit image before submitting.",
+    });
+  } else if (ai.explicitSexualContent && ai.explicitConfidence >= 0.72) {
     decision = "manual_review";
-    issues.push({ code: "uncertain_explicit_image", field: "image", severity: "review", message: "The image received an uncertain explicit-content signal and needs human review." });
+    issues.push({
+      code: "uncertain_explicit_image",
+      field: "image",
+      severity: "review",
+      message: "An uncertain explicit-content signal was sent to the human moderation queue.",
+    });
   }
-  if (ai.abusiveTextVisible && ai.abusiveTextConfidence >= 0.84) {
+
+  if (ai.abusiveTextVisible && ai.abusiveTextConfidence >= 0.92) {
     decision = "changes_required";
-    issues.push({ code: "abusive_text_in_image", field: "image", severity: "block", message: "Remove or replace the image containing clearly vulgar or abusive text." });
-  } else if (ai.abusiveTextVisible) {
+    issues.push({
+      code: "abusive_text_in_image",
+      field: "image",
+      severity: "block",
+      message: "Replace the image containing clearly readable vulgar, abusive, hateful, or sexually explicit text.",
+    });
+  } else if (ai.abusiveTextVisible && ai.abusiveTextConfidence >= 0.72) {
     if (decision === "allow") decision = "manual_review";
-    issues.push({ code: "uncertain_text_in_image", field: "image", severity: "review", message: "Visible text in an image needs a moderator check." });
+    issues.push({
+      code: "uncertain_text_in_image",
+      field: "image",
+      severity: "review",
+      message: "Uncertain visible text was sent to the human moderation queue.",
+    });
   }
-  if (ai.relevance === "irrelevant" && !ai.itemVisible) {
-    decision = "changes_required";
-    issues.push({ code: "item_not_visible", field: "image", severity: "block", message: "Upload a current photo where the listed item is clearly visible." });
-  } else if (ai.clarity === "poor" || ai.relevance === "uncertain") {
-    if (decision === "allow") decision = "manual_review";
-    issues.push({ code: "image_needs_human_check", field: "image", severity: "review", message: "A moderator should verify image clarity and relevance." });
-  }
+
   return {
     decision,
-    summary: ai.summary,
+    summary: decision === "changes_required"
+      ? "A high-confidence prohibited image signal must be corrected before submission."
+      : decision === "manual_review"
+        ? "The listing can be submitted and the uncertain image signal will be checked by a human moderator."
+        : "No high-confidence pornographic imagery or clearly vulgar text was detected in the submitted previews.",
     issues,
-    suggestions: ai.suggestions,
+    suggestions: [],
     scores: {
       explicitConfidence: ai.explicitConfidence,
       abusiveTextConfidence: ai.abusiveTextConfidence,
-      itemVisible: ai.itemVisible,
-      clarity: ai.clarity,
-      relevance: ai.relevance,
+      narrowImageSafetyOnly: true,
     },
   };
 }
@@ -188,26 +180,43 @@ export async function POST(request: Request) {
   if (!service || !user?.email_confirmed_at) {
     return Response.json({ error: "Verified account required." }, { status: 401, headers: noStoreHeaders });
   }
+  const rateLimit = await consumeRateLimit({
+    request,
+    scope: "moderation-preflight",
+    identity: user.id,
+    limit: 24,
+    networkLimit: 100,
+    windowSeconds: 10 * 60,
+    failClosed: true,
+  });
+  const limitedHeaders = { ...noStoreHeaders, ...rateLimitHeaders(rateLimit, 24) };
+  if (!rateLimit.allowed) {
+    const status = rateLimit.configured ? 429 : 503;
+    const error = rateLimit.configured
+      ? "Too many moderation checks. Try again later."
+      : "Moderation security controls are not configured.";
+    return Response.json({ error }, { status, headers: limitedHeaders });
+  }
   const { data: profile } = await service.from("profiles").select("suspended_until").eq("id", user.id).maybeSingle();
   if (profile?.suspended_until && new Date(String(profile.suspended_until)).getTime() > Date.now()) {
-    return Response.json({ error: "This account is currently suspended from marketplace actions." }, { status: 403, headers: noStoreHeaders });
+    return Response.json({ error: "This account is currently suspended from marketplace actions." }, { status: 403, headers: limitedHeaders });
   }
 
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return Response.json({ error: "Enter valid listing text and image previews." }, { status: 400, headers: noStoreHeaders });
+    return Response.json({ error: "Enter valid listing text and image previews." }, { status: 400, headers: limitedHeaders });
   }
   const rules = moderateListingText(parsed.data.title, parsed.data.description);
-  const quality = qualityReview(parsed.data.images, parsed.data.postType);
+  const imageRequirements = imageRequirementReview(parsed.data.images, parsed.data.postType);
   const rulesWithImages: ListingModerationResult = {
     ...rules,
-    decision: quality.issues.some((issue) => issue.severity === "block") ? "changes_required" : rules.decision,
-    issues: [...rules.issues, ...quality.issues],
-    suggestions: [...rules.suggestions, ...quality.suggestions],
+    decision: imageRequirements.issues.some((issue) => issue.severity === "block") ? "changes_required" : rules.decision,
+    issues: [...rules.issues, ...imageRequirements.issues],
+    suggestions: [...rules.suggestions, ...imageRequirements.suggestions],
     scores: { ...rules.scores, imageCount: parsed.data.images.length },
   };
   if (rulesWithImages.decision === "changes_required") {
-    return Response.json(rulesWithImages, { headers: noStoreHeaders });
+    return Response.json(rulesWithImages, { headers: limitedHeaders });
   }
 
   let ai = null;
@@ -218,5 +227,5 @@ export async function POST(request: Request) {
     ai = null;
   }
   const merged = mergeModerationResults(rulesWithImages, ai);
-  return Response.json(merged, { headers: noStoreHeaders });
+  return Response.json(merged, { headers: limitedHeaders });
 }

@@ -4,9 +4,20 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "functions": {
-    "app/api/assistant/route.ts": { "maxDuration": 30 }
+    "app/api/assistant/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/moderation/preflight/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/cron/maintenance/route.ts": {
+      "maxDuration": 60
+    }
   },
   "crons": [
-    { "path": "/api/cron/maintenance", "schedule": "17 3 * * *" }
+    {
+      "path": "/api/cron/maintenance",
+      "schedule": "17 3 * * *"
+    }
   ]
 }

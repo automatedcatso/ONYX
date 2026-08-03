@@ -1,6 +1,6 @@
 {
   "name": "onyx-campus-marketplace",
-  "version": "0.1.0",
+  "version": "1.2.1",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -12,8 +12,13 @@
     "start": "cross-env NEXT_TELEMETRY_DISABLED=1 next start",
     "lint": "eslint . --ignore-pattern .next",
     "typecheck": "cross-env NEXT_TELEMETRY_DISABLED=1 next typegen && tsc --noEmit",
-    "test": "node --test tests/security.test.mjs",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "test": "npm run test:security && npm run test:repo && npm run test:sql",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test:security": "node --test tests/security.test.mjs",
+    "test:repo": "node scripts/verify-repository.mjs",
+    "test:sql": "node scripts/check-sql.mjs",
+    "verify:env": "node --env-file-if-exists=.env.local scripts/verify-env.mjs",
+    "check:source": "npm test"
   },
   "dependencies": {
     "@google/genai": "^2.15.0",
@@ -41,5 +46,14 @@
     "ws": "8.21.1"
   },
   "type": "module",
-  "displayName": "ONYX"
+  "displayName": "ONYX",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/automatedcatso/ONYX.git"
+  },
+  "bugs": {
+    "url": "https://github.com/automatedcatso/ONYX/issues"
+  },
+  "homepage": "https://github.com/automatedcatso/ONYX#readme"
 }

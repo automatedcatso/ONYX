@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { sendSecurityEmail } from "@/lib/email";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
+import { smtpConfiguration } from "@/lib/runtime-config";
 import { createServiceSupabaseClient } from "@/lib/supabase-server";
 import {
   isTrustedMutationRequest,
@@ -28,10 +30,24 @@ export async function POST(request: Request) {
     return Response.json({ message: genericMessage }, { status: 202, headers: noStoreHeaders });
   }
 
+  const rateLimit = await consumeRateLimit({
+    request,
+    scope: "auth-reset",
+    identity: parsed.data.email,
+    limit: 6,
+    networkLimit: 30,
+    windowSeconds: 15 * 60,
+    failClosed: true,
+  });
+  const limitedHeaders = { ...noStoreHeaders, ...rateLimitHeaders(rateLimit, 6) };
+  if (!rateLimit.allowed) {
+    return Response.json({ message: genericMessage }, { status: 202, headers: limitedHeaders });
+  }
+
   const appUrl = publicAppUrl();
   const service = createServiceSupabaseClient();
-  if (!appUrl || !service || !process.env.SMTP_FROM) {
-    return Response.json({ error: "Password reset is not configured." }, { status: 503, headers: noStoreHeaders });
+  if (!appUrl || !service || !smtpConfiguration()) {
+    return Response.json({ error: "Password reset is not configured." }, { status: 503, headers: limitedHeaders });
   }
 
   const { data, error } = await service.auth.admin.generateLink({
@@ -52,5 +68,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return Response.json({ message: genericMessage }, { status: 202, headers: noStoreHeaders });
+  return Response.json({ message: genericMessage }, { status: 202, headers: limitedHeaders });
 }

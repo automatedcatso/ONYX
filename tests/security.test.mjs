@@ -105,7 +105,8 @@ test("production privacy controls are present", async () => {
 
   const maintenance = await readFile(join(root, "app/api/cron/maintenance/route.ts"), "utf8");
   assert.match(maintenance, /timingSafeEqual/);
-  assert.match(maintenance, /CRON_SECRET/);
+  const runtimeConfig = await readFile(join(root, "lib/runtime-config.ts"), "utf8");
+  assert.match(runtimeConfig, /CRON_SECRET/);
   assert.match(maintenance, /status:\s*401/);
 
   const assistant = await readFile(join(root, "app/api/assistant/route.ts"), "utf8");
@@ -211,6 +212,9 @@ test("password visibility, account enforcement, and AI-assisted moderation are w
   assert.match(client, /Account enforcement/);
   assert.match(client, /Disable 7 days/);
   assert.match(client, /Permanent disable/);
+  assert.match(client, /Search users by public alias/);
+  assert.match(client, /get_moderation_users",\{p_search:query\.trim\(\)\}/);
+  assert.match(client, /userSearchBusy/);
   assert.match(client, /record_listing_moderation_preflight/);
   assert.match(client, /\/api\/moderation\/preflight/);
   assert.match(client, /createSignedUrl/);
@@ -219,10 +223,14 @@ test("password visibility, account enforcement, and AI-assisted moderation are w
   assert.match(contentSafety, /vulgar_or_explicit_text/);
   assert.match(contentSafety, /external_contact_details/);
   assert.match(contentSafety, /behenchod/);
-  assert.match(imageSafety, /measureImageQuality/);
+  assert.doesNotMatch(imageSafety, /measureImageQuality/);
   assert.match(imageSafety, /moderationPreview/);
-  assert.match(preflight, /explicitConfidence >= 0\.86/);
-  assert.match(preflight, /human moderator will review all submissions/i);
+  assert.match(preflight, /explicitConfidence >= 0\.94/);
+  assert.match(preflight, /Do not decide whether an image matches a listing title/);
+  assert.match(preflight, /Do not assess image quality, lighting, sharpness, composition, item visibility, relevance/);
+  assert.doesNotMatch(preflight, /relevance:\s*z\.enum/);
+  assert.doesNotMatch(preflight, /itemVisible:\s*z\.boolean/);
+  assert.match(preflight, /Human moderators review every submitted listing/i);
   assert.match(preflight, /inlineData/);
 
   assert.match(migration, /create table if not exists public\.account_moderation/);
@@ -252,4 +260,48 @@ test("assistant responses are plain-text, greeting-aware, and UUID-safe", async 
   assert.match(client, /sanitizeAssistantText\(rawText\)/);
   assert.match(safety, /UUID_PATTERN/);
   assert.match(safety, /replace\(\/\[\\\\`\*_~\|\]\/g/);
+});
+
+
+test("distributed rate limits and least-privilege assistant reads are wired", async () => {
+  const migration = await readFile(join(root, "supabase/migrations/0006_distributed_api_rate_limits.sql"), "utf8");
+  const rateLimit = await readFile(join(root, "lib/rate-limit.ts"), "utf8");
+  const assistant = await readFile(join(root, "app/api/assistant/route.ts"), "utf8");
+  const registration = await readFile(join(root, "app/api/auth/register/route.ts"), "utf8");
+  const reset = await readFile(join(root, "app/api/auth/request-reset/route.ts"), "utf8");
+  const preflight = await readFile(join(root, "app/api/moderation/preflight/route.ts"), "utf8");
+  const maintenance = await readFile(join(root, "app/api/cron/maintenance/route.ts"), "utf8");
+
+  assert.match(migration, /create table if not exists public\.api_rate_limit_buckets/);
+  assert.match(migration, /create or replace function public\.consume_api_rate_limit/);
+  assert.match(migration, /grant execute on function public\.consume_api_rate_limit[\s\S]*to service_role/);
+  assert.match(migration, /revoke all on table public\.api_rate_limit_buckets from public, anon, authenticated/);
+  assert.match(rateLimit, /createHmac\("sha256"/);
+  assert.match(rateLimit, /x-vercel-forwarded-for/);
+  assert.match(rateLimit, /consume_api_rate_limit/);
+  assert.match(registration, /scope: "auth-register"/);
+  assert.match(reset, /scope: "auth-reset"/);
+  assert.match(preflight, /scope: "moderation-preflight"/);
+  assert.match(assistant, /scope: "assistant"/);
+  assert.match(assistant, /createPublicSupabaseClient/);
+  assert.match(assistant, /loadInventory\(createPublicSupabaseClient\(\)\)/);
+  assert.match(maintenance, /prune_api_rate_limits/);
+});
+
+test("repository governance and release automation are present", async () => {
+  const packageFile = await readFile(join(root, "package.json"), "utf8");
+  const license = await readFile(join(root, "LICENSE"), "utf8");
+  const ci = await readFile(join(root, ".github/workflows/ci.yml"), "utf8");
+  const security = await readFile(join(root, "SECURITY.md"), "utf8");
+  const readme = await readFile(join(root, "README.md"), "utf8");
+
+  assert.match(packageFile, /"version": "1\.2\.1"/);
+  assert.match(packageFile, /"license": "MIT"/);
+  assert.match(packageFile, /verify:env/);
+  assert.match(license, /MIT License/);
+  assert.match(ci, /npm run check/);
+  assert.match(ci, /npm audit --omit=dev --audit-level=critical/);
+  assert.match(security, /private vulnerability reporting/i);
+  assert.match(readme, /docs\/DEPLOYMENT\.md/);
+  assert.match(readme, /docs\/SECURITY_MODEL\.md/);
 });

@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a focused marketplace improvement
+title: "[Feature] "
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or moderator problem, not only the proposed interface.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security, moderation, or privacy implications
+    validations:
+      required: true

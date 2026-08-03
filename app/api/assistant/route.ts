@@ -1,8 +1,9 @@
 import { GoogleGenAI, type Interactions } from "@google/genai";
 import { z } from "zod";
 import { isGreetingOnly, sanitizeAssistantText } from "@/lib/assistant-safety";
+import { consumeRateLimit, rateLimitHeaders } from "@/lib/rate-limit";
 import { isTrustedMutationRequest, noStoreHeaders } from "@/lib/request-security";
-import { createServiceSupabaseClient } from "@/lib/supabase-server";
+import { createPublicSupabaseClient, createServiceSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ type InventoryItem = {
   postType: "sale" | "wanted";
 };
 
-type ServiceClient = NonNullable<ReturnType<typeof createServiceSupabaseClient>>;
+type InventoryClient = NonNullable<ReturnType<typeof createPublicSupabaseClient>>;
 
 const SEARCH_STOP_WORDS = new Set([
   "about", "active", "available", "browse", "buy", "campus", "current", "find", "for", "from",
@@ -31,7 +32,7 @@ const SEARCH_STOP_WORDS = new Set([
   "where", "with", "your",
 ]);
 
-async function loadInventory(service: ServiceClient | null): Promise<InventoryItem[]> {
+async function loadInventory(service: InventoryClient | null): Promise<InventoryItem[]> {
   if (!service) return [];
   const { data, error } = await service
     .from("marketplace_listings")
@@ -143,29 +144,44 @@ export async function POST(request: Request) {
     return Response.json({ error: "Enter a marketplace question under 1,200 characters." }, { status: 400, headers: noStoreHeaders });
   }
 
+  const service = createServiceSupabaseClient();
+  const accessToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const verifiedUser = service && accessToken
+    ? (await service.auth.getUser(accessToken)).data.user
+    : null;
+  const authenticated = Boolean(verifiedUser?.email_confirmed_at);
+  const rateLimit = await consumeRateLimit({
+    request,
+    scope: "assistant",
+    identity: verifiedUser?.id,
+    limit: 40,
+    networkLimit: authenticated ? 160 : 40,
+    windowSeconds: 5 * 60,
+    failClosed: false,
+  });
+  const limitedHeaders = { ...noStoreHeaders, ...rateLimitHeaders(rateLimit, 40) };
+  if (!rateLimit.allowed) {
+    return Response.json({ error: "Too many assistant requests. Try again shortly." }, { status: 429, headers: limitedHeaders });
+  }
+
   if (isGreetingOnly(parsed.data.message)) {
     return Response.json({
       text: "Hey! What would you like to buy, sell, or find on campus?",
       listingIds: [],
       mode: "greeting",
-    }, { headers: noStoreHeaders });
+    }, { headers: limitedHeaders });
   }
 
-  const service = createServiceSupabaseClient();
-  const inventory = await loadInventory(service);
+  const inventory = await loadInventory(createPublicSupabaseClient());
   const matches = rankInventory(parsed.data.message, inventory);
   const catalogRequested = matches.length > 0 || isBroadCatalogRequest(parsed.data.message);
   const safeFallback = catalogRequested
     ? catalogFallback(parsed.data.message, inventory, matches)
     : generalFallback();
   const apiKey = process.env.GEMINI_API_KEY;
-  const accessToken = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
-  const authenticated = service && accessToken
-    ? Boolean((await service.auth.getUser(accessToken)).data.user?.email_confirmed_at)
-    : false;
 
   if (!apiKey || !authenticated) {
-    return Response.json({ ...safeFallback, mode: catalogRequested ? "catalog-search" : "local-guidance" }, { headers: noStoreHeaders });
+    return Response.json({ ...safeFallback, mode: catalogRequested ? "catalog-search" : "local-guidance" }, { headers: limitedHeaders });
   }
 
   try {
@@ -199,8 +215,8 @@ export async function POST(request: Request) {
       text,
       listingIds: catalogRequested ? matches.map((item) => item.id) : [],
       mode: "assistant",
-    }, { headers: noStoreHeaders });
+    }, { headers: limitedHeaders });
   } catch {
-    return Response.json({ ...safeFallback, mode: catalogRequested ? "catalog-search" : "local-guidance", degraded: true }, { headers: noStoreHeaders });
+    return Response.json({ ...safeFallback, mode: catalogRequested ? "catalog-search" : "local-guidance", degraded: true }, { headers: limitedHeaders });
   }
 }
